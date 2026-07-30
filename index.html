@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>视频字幕翻译器</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- FFmpeg.wasm UMD 加载（必须用 UMD 而非 ESM，以确保 Worker 为 classic 类型） -->
+    <script src="/ffmpeg/ffmpeg.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
