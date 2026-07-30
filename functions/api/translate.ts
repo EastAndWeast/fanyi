@@ -102,7 +102,9 @@ async function translateWithBuiltinAI(
     }
     return Response.json(
       { error: `内置翻译服务暂时不可用，请稍后重试或配置自己的 API Key（${errMsg}）` },
-      { status: 502 }
+      // 注意：不能用 502/504，Cloudflare 代理域名会拦截这两个状态码
+      // 并替换响应 body，导致前端拿不到真实错误信息
+      { status: 500 }
     )
   }
 
@@ -162,7 +164,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const errText = await response.text()
       return Response.json(
         { error: `翻译API错误 (${response.status}): ${errText}` },
-        { status: 502 }
+        // 同上：避开会被 Cloudflare 代理拦截的 502
+        { status: 500 }
       )
     }
 
