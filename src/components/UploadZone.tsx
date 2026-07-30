@@ -10,9 +10,8 @@ export default function UploadZone() {
   const apiConfig = useStore((s) => s.apiConfig)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [showApiSettings, setShowApiSettings] = useState(
-    () => !apiConfig.apiKey.trim()
-  )
+  // 默认收起：内置免费翻译开箱即用，无需引导用户展开配置
+  const [showApiSettings, setShowApiSettings] = useState(false)
 
   const ffmpegMode = getFFmpegMode()
   const hasApiKey = Boolean(apiConfig.apiKey.trim())
