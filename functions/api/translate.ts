@@ -14,7 +14,9 @@ interface TranslateRequest {
 }
 
 // 内置免费翻译使用的 Workers AI 模型
-const BUILTIN_MODEL = '@cf/meta/llama-3.1-8b-instruct'
+// 注意：llama-3.1-8b-instruct 已于 2026-05-30 被弃用（错误码 5028），
+// GLM 是官方推荐替代品，且中文原生，英译中质量更好
+const BUILTIN_MODEL = '@cf/zai-org/glm-4.7-flash'
 
 // 内置额度用尽时的提示文案
 const QUOTA_EXCEEDED_MESSAGE =
@@ -81,16 +83,23 @@ async function translateWithBuiltinAI(
   texts: string[],
   numberedTexts: string
 ): Promise<Response> {
-  let result: { response?: string }
+  // 新模型可能返回 OpenAI 兼容格式（choices）或老式格式（response）
+  let result: {
+    response?: string
+    choices?: { message?: { content?: string } }[]
+  }
   try {
-    result = (await env.AI.run(BUILTIN_MODEL, {
+    result = (await env.AI.run(BUILTIN_MODEL as Parameters<Ai['run']>[0], {
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: numberedTexts },
       ],
       temperature: 0.3,
       max_tokens: 4096,
-    })) as { response?: string }
+    })) as {
+      response?: string
+      choices?: { message?: { content?: string } }[]
+    }
   } catch (aiError) {
     const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
     console.error('[Translate] Workers AI error:', errMsg)
@@ -108,7 +117,9 @@ async function translateWithBuiltinAI(
     )
   }
 
-  const translations = parseTranslations(result.response || '', texts)
+  const content =
+    result.response ?? result.choices?.[0]?.message?.content ?? ''
+  const translations = parseTranslations(content, texts)
   return Response.json({ translations, source: 'builtin' })
 }
 
