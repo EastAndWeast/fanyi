@@ -80,13 +80,13 @@ export default function UploadZone() {
                     hasApiKey ? 'text-green-300' : 'text-blue-300'
                   }`}
                 >
-                  翻译 API {hasApiKey ? '已配置' : '未配置'}
+                  翻译 API {hasApiKey ? '已配置' : '使用内置免费翻译'}
                 </p>
               </div>
               <p className="text-xs text-slate-400 mt-1 ml-4 truncate">
                 {hasApiKey
                   ? `${API_PRESETS[apiConfig.provider].label} · ${apiConfig.model}`
-                  : '请在上传视频前配置，处理完成后将自动生成中文字幕'}
+                  : '无需配置即可翻译，配置自己的 Key 可获得更稳定的质量'}
               </p>
             </div>
             <span className="flex-shrink-0 text-xs text-indigo-300">
@@ -106,7 +106,7 @@ export default function UploadZone() {
 
         {!hasApiKey && (
           <div className="rounded-lg bg-slate-800/40 px-4 py-3 text-xs text-slate-400">
-            不配置 API Key 也可以继续，仅生成英文字幕。
+            未配置时默认使用内置免费翻译（每日限额，先到先得）；额度用完后可配置自己的 API Key 继续翻译。
           </div>
         )}
 

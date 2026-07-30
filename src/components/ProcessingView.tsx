@@ -31,7 +31,6 @@ export default function ProcessingView() {
 
   const [stage, setStage] = useState<ProcessingStage>('idle')
   const [error, setError] = useState('')
-  const [needsApiKey, setNeedsApiKey] = useState(false)
   const startedRef = useRef(false)
 
   useEffect(() => {
@@ -54,30 +53,25 @@ export default function ProcessingView() {
       setStage('transcribing')
       const subs = await callSTT(audioWav)
 
-      // 步骤3: 翻译（如果配置了API Key）
-      if (apiConfig.apiKey) {
-        setStage('translating')
-        try {
-          const texts = subs.map((s) => s.textEn)
-          const translations = await callTranslate(apiConfig, texts)
-          const translated = subs.map((s, i) => ({
-            ...s,
-            textZh: translations[i] || '',
-          }))
-          setSubtitles(translated)
-        } catch (translateErr) {
-          // 翻译失败不阻塞，保留英文字幕
-          console.error('翻译失败:', translateErr)
-          setSubtitles(subs)
-          setError(
-            translateErr instanceof Error
-              ? translateErr.message
-              : '翻译失败，已保留英文字幕'
-          )
-        }
-      } else {
+      // 步骤3: 翻译（未配置 API Key 时后端自动使用内置免费翻译）
+      setStage('translating')
+      try {
+        const texts = subs.map((s) => s.textEn)
+        const translations = await callTranslate(apiConfig, texts)
+        const translated = subs.map((s, i) => ({
+          ...s,
+          textZh: translations[i] || '',
+        }))
+        setSubtitles(translated)
+      } catch (translateErr) {
+        // 翻译失败不阻塞，保留英文字幕
+        console.error('翻译失败:', translateErr)
         setSubtitles(subs)
-        setNeedsApiKey(true)
+        setError(
+          translateErr instanceof Error
+            ? translateErr.message
+            : '翻译失败，已保留英文字幕'
+        )
       }
 
       setStage('done')
@@ -92,7 +86,6 @@ export default function ProcessingView() {
   const handleRetry = () => {
     startedRef.current = false
     setError('')
-    setNeedsApiKey(false)
     setStage('idle')
     setTimeout(() => void process(), 100)
   }
@@ -155,7 +148,6 @@ export default function ProcessingView() {
             {STAGES.map((s, i) => {
               const isActive = i === currentStageIndex
               const isDone = i < currentStageIndex || stage === 'done'
-              const isPending = !needsApiKey && s === 'translating' && !apiConfig.apiKey
 
               return (
                 <div
@@ -188,7 +180,6 @@ export default function ProcessingView() {
                       }`}
                     >
                       {STAGE_INFO[s].label}
-                      {isPending && '（跳过：未配置API Key）'}
                     </p>
                     <p className="text-xs text-slate-500 truncate">
                       {STAGE_INFO[s].desc}
