@@ -39,7 +39,7 @@ export default function SubtitleList() {
 
   if (subtitles.length === 0) {
     return (
-      <div className="text-center text-slate-500 py-8 text-sm">
+      <div className="text-center text-slate-400 py-8 text-sm">
         暂无字幕
       </div>
     )
@@ -53,17 +53,17 @@ export default function SubtitleList() {
           data-sub-id={sub.id}
           className={`rounded-lg border p-3 transition-colors ${
             activeSubtitleId === sub.id
-              ? 'border-indigo-500 bg-indigo-500/10'
-              : 'border-slate-700 bg-slate-800/50'
+              ? 'border-blue-500 bg-blue-500/10'
+              : 'border-slate-200 bg-white'
           }`}
         >
           {/* 时间戳 */}
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-slate-500 font-mono">
               {formatTime(sub.start)}
             </span>
-            <span className="text-xs text-slate-600">→</span>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-slate-300">→</span>
+            <span className="text-xs text-slate-500 font-mono">
               {formatTime(sub.end)}
             </span>
           </div>
@@ -74,7 +74,7 @@ export default function SubtitleList() {
             value={sub.textEn}
             onChange={(e) => handleEnChange(sub.id, e.target.value)}
             onFocus={() => handleFocus(sub)}
-            className="w-full bg-transparent text-sm text-slate-200 outline-none mb-1 placeholder:text-slate-600"
+            className="w-full bg-transparent text-sm text-slate-800 outline-none mb-1 placeholder:text-slate-400"
             placeholder="英文字幕"
           />
 
@@ -84,7 +84,7 @@ export default function SubtitleList() {
             value={sub.textZh}
             onChange={(e) => handleZhChange(sub.id, e.target.value)}
             onFocus={() => handleFocus(sub)}
-            className="w-full bg-transparent text-sm text-amber-300/90 outline-none placeholder:text-slate-600"
+            className="w-full bg-transparent text-sm text-amber-700 outline-none placeholder:text-slate-400"
             placeholder="中文字幕"
           />
         </div>

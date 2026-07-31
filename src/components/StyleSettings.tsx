@@ -8,14 +8,14 @@ export default function StyleSettings() {
     <div className="space-y-4">
       {/* 语言开关 */}
       <div className="space-y-2">
-        <label className="text-xs text-slate-400">显示语言</label>
+        <label className="text-xs text-slate-500">显示语言</label>
         <div className="flex gap-2">
           <button
             onClick={() => updateSettings({ showEn: !settings.showEn })}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
               settings.showEn
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-700 text-slate-400'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-500'
             }`}
           >
             英文
@@ -24,8 +24,8 @@ export default function StyleSettings() {
             onClick={() => updateSettings({ showZh: !settings.showZh })}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
               settings.showZh
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-700 text-slate-400'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-500'
             }`}
           >
             中文
@@ -37,7 +37,7 @@ export default function StyleSettings() {
       <div className="space-y-2">
         {settings.showEn && (
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-300">英文颜色</span>
+            <span className="text-sm text-slate-700">英文颜色</span>
             <input
               type="color"
               value={settings.enColor}
@@ -47,7 +47,7 @@ export default function StyleSettings() {
         )}
         {settings.showZh && (
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-300">中文颜色</span>
+            <span className="text-sm text-slate-700">中文颜色</span>
             <input
               type="color"
               value={settings.zhColor}
@@ -60,8 +60,8 @@ export default function StyleSettings() {
       {/* 位置选择 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs text-slate-400">字幕位置（距底部）</label>
-          <span className="text-xs text-slate-300">
+          <label className="text-xs text-slate-500">字幕位置（距底部）</label>
+          <span className="text-xs text-slate-700">
             {100 - settings.positionY}%
           </span>
         </div>
@@ -76,12 +76,12 @@ export default function StyleSettings() {
           }
           className="w-full"
         />
-        <div className="flex justify-between text-[10px] text-slate-500">
+        <div className="flex justify-between text-[10px] text-slate-400">
           <span>底部</span>
           <span>中间</span>
           <span>顶部</span>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-400">
           距底部约 1/3（33%）可避免被抖音等平台的底部 UI 遮挡
         </p>
       </div>
@@ -89,8 +89,8 @@ export default function StyleSettings() {
       {/* 字号 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs text-slate-400">字号</label>
-          <span className="text-xs text-slate-300">{settings.fontSize}px</span>
+          <label className="text-xs text-slate-500">字号</label>
+          <span className="text-xs text-slate-700">{settings.fontSize}px</span>
         </div>
         <input
           type="range"
@@ -108,11 +108,11 @@ export default function StyleSettings() {
       {/* 背景开关 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-300">字幕背景</span>
+          <span className="text-sm text-slate-700">字幕背景</span>
           <button
             onClick={() => updateSettings({ background: !settings.background })}
             className={`relative h-6 w-11 rounded-full transition-colors ${
-              settings.background ? 'bg-indigo-600' : 'bg-slate-600'
+              settings.background ? 'bg-blue-600' : 'bg-slate-300'
             }`}
           >
             <span
@@ -125,8 +125,8 @@ export default function StyleSettings() {
         {settings.background && (
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-slate-400">背景透明度</label>
-              <span className="text-xs text-slate-300">
+              <label className="text-xs text-slate-500">背景透明度</label>
+              <span className="text-xs text-slate-700">
                 {Math.round(settings.bgOpacity * 100)}%
               </span>
             </div>

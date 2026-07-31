@@ -42,9 +42,9 @@ export default function UploadZone() {
       <div className="w-full max-w-2xl mx-auto py-6 space-y-6">
         {/* 单线程兼容模式提示（手机 / 微信 / 国产浏览器等无法跨域隔离时） */}
         {ffmpegMode === 'single-thread' && (
-          <div className="rounded-lg border border-sky-600/40 bg-sky-600/10 p-4 text-sm text-sky-200">
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-700">
             <p className="font-semibold mb-1">当前为单线程兼容模式</p>
-            <p className="text-xs text-sky-200/80">
+            <p className="text-xs text-sky-600">
               你的浏览器不支持多线程加速（手机自带浏览器、微信内打开等常见），
               音频提取仍可正常使用，只是速度较慢。建议视频不要太长；
               如需更快，请用电脑 Chrome/Edge 打开。
@@ -56,8 +56,8 @@ export default function UploadZone() {
         <div
           className={`rounded-xl border overflow-hidden ${
             hasApiKey
-              ? 'border-green-600/40 bg-green-600/5'
-              : 'border-blue-600/50 bg-blue-600/10'
+              ? 'border-green-200 bg-green-50'
+              : 'border-blue-500 bg-blue-50'
           }`}
         >
           <button
@@ -71,24 +71,24 @@ export default function UploadZone() {
               <div className="flex items-center gap-2">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    hasApiKey ? 'bg-green-400' : 'bg-blue-400'
+                    hasApiKey ? 'bg-green-500' : 'bg-blue-500'
                   }`}
                 />
                 <p
                   className={`text-sm font-semibold ${
-                    hasApiKey ? 'text-green-300' : 'text-blue-300'
+                    hasApiKey ? 'text-green-600' : 'text-blue-600'
                   }`}
                 >
                   翻译 API {hasApiKey ? '已配置' : '使用内置免费翻译'}
                 </p>
               </div>
-              <p className="text-xs text-slate-400 mt-1 ml-4 truncate">
+              <p className="text-xs text-slate-500 mt-1 ml-4 truncate">
                 {hasApiKey
                   ? `${API_PRESETS[apiConfig.provider].label} · ${apiConfig.model}`
                   : '无需配置即可翻译，配置自己的 Key 可获得更稳定的质量'}
               </p>
             </div>
-            <span className="flex-shrink-0 text-xs text-indigo-300">
+            <span className="flex-shrink-0 text-xs text-blue-600">
               {showApiSettings ? '收起' : hasApiKey ? '修改配置' : '立即配置'}
             </span>
           </button>
@@ -96,7 +96,7 @@ export default function UploadZone() {
           {showApiSettings && (
             <div
               id="upload-api-settings"
-              className="border-t border-slate-700/60 p-4"
+              className="border-t border-slate-200 p-4"
             >
               <ApiKeySettings compact />
             </div>
@@ -104,7 +104,7 @@ export default function UploadZone() {
         </div>
 
         {!hasApiKey && (
-          <div className="rounded-lg bg-slate-800/40 px-4 py-3 text-xs text-slate-400">
+          <div className="rounded-lg bg-slate-100 px-4 py-3 text-xs text-slate-500">
             未配置时默认使用内置免费翻译（每日限额，先到先得）；额度用完后可配置自己的 API Key 继续翻译。
           </div>
         )}
@@ -120,8 +120,8 @@ export default function UploadZone() {
           onClick={() => fileInputRef.current?.click()}
           className={`relative rounded-2xl border-2 border-dashed p-12 cursor-pointer transition-all ${
             isDragging
-              ? 'border-indigo-500 bg-indigo-500/10 scale-[1.02]'
-              : 'border-slate-700 hover:border-slate-600 bg-slate-800/30'
+              ? 'border-blue-500 bg-blue-500/10 scale-[1.02]'
+              : 'border-slate-300 hover:border-slate-400 bg-slate-50'
           }`}
         >
           <input
@@ -133,9 +133,9 @@ export default function UploadZone() {
           />
 
           <div className="text-center space-y-4">
-            <div className="w-16 h-16 mx-auto rounded-full bg-indigo-600/20 flex items-center justify-center">
+            <div className="w-16 h-16 mx-auto rounded-full bg-blue-600/10 flex items-center justify-center">
               <svg
-                className="w-8 h-8 text-indigo-400"
+                className="w-8 h-8 text-blue-600"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -149,14 +149,14 @@ export default function UploadZone() {
               </svg>
             </div>
             <div>
-              <p className="text-lg font-medium text-slate-200">
+              <p className="text-lg font-medium text-slate-800">
                 拖拽视频到此处
               </p>
-              <p className="text-sm text-slate-400 mt-1">
+              <p className="text-sm text-slate-500 mt-1">
                 或点击选择文件
               </p>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-400">
               支持 MP4、WebM、MOV 等格式
             </p>
           </div>
@@ -183,10 +183,10 @@ export default function UploadZone() {
           ].map((f, i) => (
             <div
               key={i}
-              className="rounded-xl bg-slate-800/50 border border-slate-700/50 p-4"
+              className="rounded-xl bg-white border border-slate-200 p-4"
             >
               <svg
-                className="w-5 h-5 text-indigo-400 mb-2"
+                className="w-5 h-5 text-blue-600 mb-2"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -196,8 +196,8 @@ export default function UploadZone() {
               >
                 <path d={f.icon} />
               </svg>
-              <p className="text-sm font-medium text-slate-300">{f.title}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{f.desc}</p>
+              <p className="text-sm font-medium text-slate-700">{f.title}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{f.desc}</p>
             </div>
           ))}
         </div>

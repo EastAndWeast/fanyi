@@ -9,7 +9,7 @@ export default function App() {
   const step = useStore((s) => s.step)
 
   return (
-    <div className="h-full flex flex-col bg-slate-900">
+    <div className="h-full flex flex-col bg-slate-50">
       <Header />
       <main className="flex-1 flex flex-col overflow-hidden">
         {step === 'upload' && <UploadZone />}

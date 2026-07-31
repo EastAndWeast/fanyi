@@ -14,11 +14,11 @@ export default function Header() {
   const currentIndex = steps.findIndex((s) => s.key === step)
 
   return (
-    <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50">
+    <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <svg
-            className="w-6 h-6 text-indigo-400"
+            className="w-6 h-6 text-blue-600"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -29,7 +29,7 @@ export default function Header() {
             <rect x="2" y="4" width="20" height="16" rx="2" />
             <path d="M7 15h3M14 15h3M7 11h10" />
           </svg>
-          <span className="font-semibold text-slate-200 text-sm sm:text-base">
+          <span className="font-semibold text-slate-800 text-sm sm:text-base">
             视频字幕翻译器
           </span>
         </div>
@@ -41,10 +41,10 @@ export default function Header() {
               <div
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors ${
                   i === currentIndex
-                    ? 'bg-indigo-600 text-white'
+                    ? 'bg-blue-600 text-white'
                     : i < currentIndex
-                      ? 'text-indigo-400'
-                      : 'text-slate-600'
+                      ? 'text-blue-600'
+                      : 'text-slate-300'
                 }`}
               >
                 <span
@@ -52,8 +52,8 @@ export default function Header() {
                     i === currentIndex
                       ? 'bg-white/20'
                       : i < currentIndex
-                        ? 'bg-indigo-600'
-                        : 'bg-slate-700'
+                        ? 'bg-blue-600'
+                        : 'bg-slate-200'
                   }`}
                 >
                   {i < currentIndex ? '✓' : i + 1}
@@ -62,7 +62,7 @@ export default function Header() {
               </div>
               {i < steps.length - 1 && (
                 <div
-                  className={`w-3 sm:w-6 h-px ${i < currentIndex ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                  className={`w-3 sm:w-6 h-px ${i < currentIndex ? 'bg-blue-600' : 'bg-slate-200'}`}
                 />
               )}
             </div>
@@ -73,7 +73,7 @@ export default function Header() {
         {step !== 'upload' && (
           <button
             onClick={reset}
-            className="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded transition-colors"
+            className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded transition-colors"
           >
             重新开始
           </button>

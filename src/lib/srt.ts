@@ -34,7 +34,9 @@ export function generateSRT(
   return subtitles
     .map((sub, index) => {
       const texts: string[] = []
-      if (lang === 'en' || lang === 'both') texts.push(sub.textEn)
+      if (lang === 'en' || lang === 'both') {
+        if (sub.textEn) texts.push(sub.textEn)
+      }
       if (lang === 'zh' || lang === 'both') {
         if (sub.textZh) texts.push(sub.textZh)
       }
@@ -57,7 +59,9 @@ export function generateVTT(
   const body = subtitles
     .map((sub) => {
       const texts: string[] = []
-      if (lang === 'en' || lang === 'both') texts.push(sub.textEn)
+      if (lang === 'en' || lang === 'both') {
+        if (sub.textEn) texts.push(sub.textEn)
+      }
       if (lang === 'zh' || lang === 'both') {
         if (sub.textZh) texts.push(sub.textZh)
       }

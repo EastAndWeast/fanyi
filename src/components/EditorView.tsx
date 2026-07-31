@@ -58,35 +58,35 @@ export default function EditorView() {
           <button
             onClick={handleRetranslate}
             disabled={retranslating}
-            className="flex-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-700 text-slate-200 px-4 py-2.5 text-sm font-medium transition-colors"
+            className="flex-1 rounded-lg bg-white hover:bg-slate-50 disabled:opacity-50 border border-slate-200 text-slate-700 px-4 py-2.5 text-sm font-medium transition-colors"
           >
             {retranslating ? '翻译中...' : '重新翻译'}
           </button>
           <button
             onClick={() => setStep('export')}
-            className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 text-sm font-medium transition-colors"
+            className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 text-sm font-medium transition-colors"
           >
             导出视频
           </button>
         </div>
 
         {translateError && (
-          <p className="text-xs text-red-400 px-1">{translateError}</p>
+          <p className="text-xs text-red-500 px-1">{translateError}</p>
         )}
       </div>
 
       {/* 右侧：字幕编辑 + 设置 */}
-      <div className="w-full lg:w-96 flex flex-col rounded-xl bg-slate-800/30 border border-slate-700/50 overflow-hidden">
+      <div className="w-full lg:w-96 flex flex-col rounded-xl bg-white border border-slate-200 overflow-hidden">
         {/* 标签切换 */}
-        <div className="flex border-b border-slate-700/50">
+        <div className="flex border-b border-slate-200">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
                 tab === t.key
-                  ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/5'
-                  : 'text-slate-400 hover:text-slate-300'
+                  ? 'text-blue-600 border-b-2 border-blue-500 bg-blue-500/5'
+                  : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {t.label}

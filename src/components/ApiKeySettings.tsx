@@ -66,7 +66,7 @@ export default function ApiKeySettings({
     <div className={compact ? 'space-y-4' : 'space-y-4 p-5'}>
       {!compact && (
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-semibold text-slate-200">
+          <h3 className="text-base font-semibold text-slate-800">
             翻译 API 配置
           </h3>
           {onClose && (
@@ -74,7 +74,7 @@ export default function ApiKeySettings({
               type="button"
               aria-label="关闭 API 配置"
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-200 text-xl leading-none"
+              className="text-slate-500 hover:text-slate-700 text-xl leading-none"
             >
               ×
             </button>
@@ -84,7 +84,7 @@ export default function ApiKeySettings({
 
       {/* 服务商选择 */}
       <div className="space-y-2">
-        <label className="text-xs text-slate-400">服务商</label>
+        <label className="text-xs text-slate-500">服务商</label>
         <div className="grid grid-cols-3 gap-2">
           {(
             Object.entries(API_PRESETS) as [
@@ -98,8 +98,8 @@ export default function ApiKeySettings({
               onClick={() => handleProviderChange(key)}
               className={`rounded-lg px-2 py-2 text-xs font-medium transition-colors ${
                 apiConfig.provider === key
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-700 text-slate-400'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-500'
               }`}
             >
               {preset.label}
@@ -110,7 +110,7 @@ export default function ApiKeySettings({
 
       {/* API Key */}
       <div className="space-y-2">
-        <label htmlFor="translation-api-key" className="text-xs text-slate-400">
+        <label htmlFor="translation-api-key" className="text-xs text-slate-500">
           API Key
         </label>
         <div className="relative">
@@ -120,12 +120,12 @@ export default function ApiKeySettings({
             value={apiConfig.apiKey}
             onChange={(e) => updateApiConfig({ apiKey: e.target.value })}
             placeholder="粘贴你的 API Key"
-            className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 pr-10 text-sm text-slate-200 outline-none focus:border-indigo-500 placeholder:text-slate-600"
+            className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 pr-10 text-sm text-slate-800 outline-none focus:border-blue-500 placeholder:text-slate-400"
           />
           <button
             type="button"
             onClick={() => setShowKey(!showKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs"
           >
             {showKey ? '隐藏' : '显示'}
           </button>
@@ -138,7 +138,7 @@ export default function ApiKeySettings({
           <div className="space-y-2">
             <label
               htmlFor="translation-api-endpoint"
-              className="text-xs text-slate-400"
+              className="text-xs text-slate-500"
             >
               API Endpoint (OpenAI 兼容)
             </label>
@@ -148,16 +148,16 @@ export default function ApiKeySettings({
               value={apiConfig.endpoint}
               onChange={(e) => updateApiConfig({ endpoint: e.target.value })}
               placeholder="https://api.example.com/v1"
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 placeholder:text-slate-600"
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 placeholder:text-slate-400"
             />
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-slate-400">
               填 Base URL 即可（如 https://open.bigmodel.cn/api/paas/v4），系统会自动补全 /chat/completions
             </p>
           </div>
           <div className="space-y-2">
             <label
               htmlFor="translation-api-model"
-              className="text-xs text-slate-400"
+              className="text-xs text-slate-500"
             >
               模型名称
             </label>
@@ -167,7 +167,7 @@ export default function ApiKeySettings({
               value={apiConfig.model}
               onChange={(e) => updateApiConfig({ model: e.target.value })}
               placeholder="gpt-4o-mini"
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 placeholder:text-slate-600"
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 placeholder:text-slate-400"
             />
           </div>
         </>
@@ -178,7 +178,7 @@ export default function ApiKeySettings({
         <div className="space-y-2">
           <label
             htmlFor="translation-api-model"
-            className="text-xs text-slate-400"
+            className="text-xs text-slate-500"
           >
             模型
           </label>
@@ -188,7 +188,7 @@ export default function ApiKeySettings({
             value={apiConfig.model}
             onChange={(e) => updateApiConfig({ model: e.target.value })}
             placeholder="模型名称"
-            className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 placeholder:text-slate-600"
+            className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 placeholder:text-slate-400"
           />
         </div>
       )}
@@ -199,19 +199,19 @@ export default function ApiKeySettings({
           type="button"
           onClick={handleTestApi}
           disabled={testStatus.state === 'testing'}
-          className="w-full rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 disabled:cursor-wait text-slate-200 px-3 py-2 text-sm font-medium transition-colors"
+          className="w-full rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-wait text-slate-700 px-3 py-2 text-sm font-medium transition-colors"
         >
           {testStatus.state === 'testing' ? '检测中…' : '检测 API 连接'}
         </button>
         {testStatus.state === 'success' && (
-          <p className="text-xs text-green-400 break-all">✅ {testStatus.message}</p>
+          <p className="text-xs text-green-600 break-all">✅ {testStatus.message}</p>
         )}
         {testStatus.state === 'error' && (
-          <p className="text-xs text-red-400 break-all">❌ {testStatus.message}</p>
+          <p className="text-xs text-red-500 break-all">❌ {testStatus.message}</p>
         )}
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-slate-400">
         API Key 仅保存在你的浏览器中，不会上传到服务器。
       </p>
     </div>

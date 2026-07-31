@@ -14,8 +14,8 @@ body,
 }
 
 body {
-  background-color: #0f172a;
-  color: #e2e8f0;
+  background-color: #f8fafc;
+  color: #1e293b;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', sans-serif;
 }
@@ -31,12 +31,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #cbd5e1;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #94a3b8;
 }
 
 /* 范围滑块样式 */
@@ -44,7 +44,7 @@ input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  background: #334155;
+  background: #cbd5e1;
   border-radius: 2px;
   outline: none;
 }
@@ -54,7 +54,7 @@ input[type='range']::-webkit-slider-thumb {
   appearance: none;
   width: 16px;
   height: 16px;
-  background: #6366f1;
+  background: #3b82f6;
   border-radius: 50%;
   cursor: pointer;
 }
@@ -62,7 +62,7 @@ input[type='range']::-webkit-slider-thumb {
 input[type='range']::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  background: #6366f1;
+  background: #3b82f6;
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -85,6 +85,6 @@ input[type='color']::-webkit-color-swatch-wrapper {
 }
 
 input[type='color']::-webkit-color-swatch {
-  border: 2px solid #334155;
+  border: 2px solid #cbd5e1;
   border-radius: 8px;
 }

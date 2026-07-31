@@ -131,7 +131,7 @@ export default function ExportView() {
         <VideoPlayer />
         <button
           onClick={() => setStep('editor')}
-          className="mt-3 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+          className="mt-3 text-sm text-slate-500 hover:text-slate-700 transition-colors"
         >
           ← 返回编辑
         </button>
@@ -140,12 +140,12 @@ export default function ExportView() {
       {/* 右侧：导出选项 */}
       <div className="w-full lg:w-96 space-y-4">
         {/* 导出视频 */}
-        <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-4 space-y-3">
+        <div className="rounded-xl bg-white border border-slate-200 p-4 space-y-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-200 mb-1">
+            <h3 className="text-sm font-semibold text-slate-800 mb-1">
               导出带字幕视频
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-400">
               将字幕直接烧录到视频画面中（实时录制，时长与视频相同）
             </p>
           </div>
@@ -153,7 +153,7 @@ export default function ExportView() {
           {!exporting && progress === 0 && (
             <button
               onClick={handleExportVideo}
-              className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 text-sm font-medium transition-colors"
+              className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 text-sm font-medium transition-colors"
             >
               开始导出
             </button>
@@ -161,19 +161,19 @@ export default function ExportView() {
 
           {exporting && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-400">
+              <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>{stage === 'muxing' ? '正在合成音频...' : '正在录制...'}</span>
                 <span>{Math.round(progress * 100)}%</span>
               </div>
-              <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+              <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
                 <div
-                  className="h-full bg-indigo-500 transition-all duration-200"
+                  className="h-full bg-blue-500 transition-all duration-200"
                   style={{ width: `${progress * 100}%` }}
                 />
               </div>
               <button
                 onClick={handleCancel}
-                className="w-full rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 text-sm font-medium transition-colors"
+                className="w-full rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 text-sm font-medium transition-colors"
               >
                 取消
               </button>
@@ -181,48 +181,48 @@ export default function ExportView() {
           )}
 
           {!exporting && progress > 0 && progress < 1 && !error && (
-            <p className="text-xs text-slate-500">导出已取消</p>
+            <p className="text-xs text-slate-400">导出已取消</p>
           )}
 
           {!exporting && progress >= 1 && (
-            <p className="text-xs text-green-400">导出完成！文件已开始下载。</p>
+            <p className="text-xs text-green-600">导出完成！文件已开始下载。</p>
           )}
 
           {error && (
-            <p className="text-xs text-red-400">{error}</p>
+            <p className="text-xs text-red-500">{error}</p>
           )}
         </div>
 
         {/* 导出字幕文件 */}
-        <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-4 space-y-3">
+        <div className="rounded-xl bg-white border border-slate-200 p-4 space-y-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-200 mb-1">
+            <h3 className="text-sm font-semibold text-slate-800 mb-1">
               下载字幕文件
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-400">
               适用于外挂字幕播放器或视频编辑软件
             </p>
           </div>
 
           {/* SRT */}
           <div className="space-y-1.5">
-            <p className="text-xs text-slate-400 font-medium">SRT 格式</p>
+            <p className="text-xs text-slate-500 font-medium">SRT 格式</p>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => handleDownloadSRT('both')}
-                className="rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1.5 text-xs font-medium transition-colors"
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
                 双语
               </button>
               <button
                 onClick={() => handleDownloadSRT('en')}
-                className="rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1.5 text-xs font-medium transition-colors"
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
                 英文
               </button>
               <button
                 onClick={() => handleDownloadSRT('zh')}
-                className="rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1.5 text-xs font-medium transition-colors"
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
                 中文
               </button>
@@ -231,23 +231,23 @@ export default function ExportView() {
 
           {/* VTT */}
           <div className="space-y-1.5">
-            <p className="text-xs text-slate-400 font-medium">VTT 格式</p>
+            <p className="text-xs text-slate-500 font-medium">VTT 格式</p>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => handleDownloadVTT('both')}
-                className="rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1.5 text-xs font-medium transition-colors"
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
                 双语
               </button>
               <button
                 onClick={() => handleDownloadVTT('en')}
-                className="rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1.5 text-xs font-medium transition-colors"
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
                 英文
               </button>
               <button
                 onClick={() => handleDownloadVTT('zh')}
-                className="rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1.5 text-xs font-medium transition-colors"
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
                 中文
               </button>
@@ -256,22 +256,22 @@ export default function ExportView() {
         </div>
 
         {/* 字幕统计 */}
-        <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-4">
-          <h3 className="text-sm font-semibold text-slate-200 mb-2">
+        <div className="rounded-xl bg-white border border-slate-200 p-4">
+          <h3 className="text-sm font-semibold text-slate-800 mb-2">
             字幕统计
           </h3>
           <div className="grid grid-cols-2 gap-3 text-center">
-            <div className="rounded-lg bg-slate-800/50 p-2">
-              <p className="text-lg font-bold text-slate-200">
+            <div className="rounded-lg bg-slate-100 p-2">
+              <p className="text-lg font-bold text-slate-800">
                 {subtitles.length}
               </p>
-              <p className="text-xs text-slate-500">条字幕</p>
+              <p className="text-xs text-slate-400">条字幕</p>
             </div>
-            <div className="rounded-lg bg-slate-800/50 p-2">
-              <p className="text-lg font-bold text-slate-200">
+            <div className="rounded-lg bg-slate-100 p-2">
+              <p className="text-lg font-bold text-slate-800">
                 {subtitles.filter((s) => s.textZh).length}
               </p>
-              <p className="text-xs text-slate-500">已翻译</p>
+              <p className="text-xs text-slate-400">已翻译</p>
             </div>
           </div>
         </div>
@@ -279,7 +279,7 @@ export default function ExportView() {
         {/* 完成 */}
         <button
           onClick={reset}
-          className="w-full rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-4 py-2.5 text-sm font-medium transition-colors"
+          className="w-full rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2.5 text-sm font-medium transition-colors"
         >
           处理新视频
         </button>

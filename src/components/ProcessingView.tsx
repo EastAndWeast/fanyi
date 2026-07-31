@@ -130,14 +130,14 @@ export default function ProcessingView() {
                 </svg>
               </div>
             ) : (
-              <div className="w-full h-full rounded-full border-4 border-slate-700 border-t-indigo-500 animate-spin" />
+              <div className="w-full h-full rounded-full border-4 border-slate-200 border-t-blue-500 animate-spin" />
             )}
           </div>
 
-          <h2 className="text-lg font-semibold text-slate-200">
+          <h2 className="text-lg font-semibold text-slate-800">
             {STAGE_INFO[stage].label}
           </h2>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             {stage === 'error' ? error : STAGE_INFO[stage].desc}
           </p>
         </div>
@@ -154,34 +154,34 @@ export default function ProcessingView() {
                   key={s}
                   className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${
                     isActive
-                      ? 'border-indigo-500 bg-indigo-500/10'
+                      ? 'border-blue-500 bg-blue-500/10'
                       : isDone
-                        ? 'border-green-600/30 bg-green-600/5'
-                        : 'border-slate-700 bg-slate-800/30'
+                        ? 'border-green-200 bg-green-50'
+                        : 'border-slate-200 bg-slate-50'
                   }`}
                 >
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0">
                     {isDone ? (
                       <span className="text-green-400">✓</span>
                     ) : isActive ? (
-                      <span className="w-4 h-4 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+                      <span className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
                     ) : (
-                      <span className="text-slate-600">{i + 1}</span>
+                      <span className="text-slate-300">{i + 1}</span>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p
                       className={`text-sm font-medium ${
                         isActive
-                          ? 'text-indigo-300'
+                          ? 'text-blue-600'
                           : isDone
-                            ? 'text-green-400'
-                            : 'text-slate-400'
+                            ? 'text-green-600'
+                            : 'text-slate-500'
                       }`}
                     >
                       {STAGE_INFO[s].label}
                     </p>
-                    <p className="text-xs text-slate-500 truncate">
+                    <p className="text-xs text-slate-400 truncate">
                       {STAGE_INFO[s].desc}
                     </p>
                   </div>
@@ -193,7 +193,7 @@ export default function ProcessingView() {
 
         {/* 翻译失败提示 */}
         {error && stage !== 'error' && (
-          <div className="rounded-lg border border-amber-600/50 bg-amber-600/10 p-3 text-xs text-amber-300">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-600">
             <p className="font-semibold mb-1">翻译失败</p>
             <p>{error}。英文字幕已保留，你可以在编辑界面手动填写或稍后重试。</p>
           </div>
@@ -204,13 +204,13 @@ export default function ProcessingView() {
           <div className="flex gap-2">
             <button
               onClick={handleRetry}
-              className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 text-sm font-medium transition-colors"
+              className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 text-sm font-medium transition-colors"
             >
               重试
             </button>
             <button
               onClick={handleBack}
-              className="flex-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 text-sm font-medium transition-colors"
+              className="flex-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 text-sm font-medium transition-colors"
             >
               返回
             </button>
