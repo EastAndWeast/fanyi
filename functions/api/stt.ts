@@ -151,6 +151,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     try {
       result = await env.AI.run('@cf/openai/whisper', {
         audio: audioBytes,
+        language: 'en',
       }) as {
         text?: string
         vtt?: string
