@@ -185,6 +185,7 @@ export async function muxOriginalAudio(
   recordedBlob: Blob,
   originalVideo: File,
   extension: string,
+  volume?: number,
   onLog?: (message: string) => void
 ): Promise<Blob> {
   const ff = await getFFmpeg()
@@ -203,6 +204,12 @@ export async function muxOriginalAudio(
       ? ['-c:a', 'aac', '-b:a', '192k']
       : ['-c:a', 'libopus', '-b:a', '128k']
 
+  // 音量滤镜：volume=1.0 为原声，>1 放大，<1 减小
+  const volumeArgs =
+    volume !== undefined && volume !== 1
+      ? ['-af', `volume=${volume}`]
+      : []
+
   onLog?.('正在合成音频...')
   const code = await ff.exec([
     '-i', recName,
@@ -212,6 +219,7 @@ export async function muxOriginalAudio(
     '-map', '1:a:0?',
     '-c:v', 'copy',
     ...audioArgs,
+    ...volumeArgs,
     '-shortest',
     outName,
   ])

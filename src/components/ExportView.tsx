@@ -82,7 +82,8 @@ export default function ExportView() {
         finalBlob = await muxOriginalAudio(
           result.blob,
           videoFile,
-          result.extension
+          result.extension,
+          settings.volume
         )
         console.log('[Export] Audio muxed, final size:', finalBlob.size)
       } catch (muxErr) {

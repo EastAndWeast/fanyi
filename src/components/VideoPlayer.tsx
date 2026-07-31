@@ -1,6 +1,12 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store'
 import type { SubtitleSegment, SubtitleSettings } from '../types'
+import {
+  setupPreviewAudio,
+  setPreviewVolume,
+  resumePreviewAudio,
+  teardownPreviewAudio,
+} from '../lib/audioManager'
 
 interface VideoPlayerProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>
@@ -51,12 +57,33 @@ export default function VideoPlayer({ videoRef }: VideoPlayerProps) {
     }
   }, [activeSubtitleId, subtitles, ref])
 
-  // 应用音量倍率（HTML video.volume 上限为 1，超出部分仅导出时生效）
+  // 初始化 WebAudio 增益图（突破浏览器 volume ≤ 1 的限制）
   useEffect(() => {
+    if (!ref.current) return
+    try {
+      setupPreviewAudio(ref.current, settings.volume)
+    } catch {
+      // createMediaElementSource 失败（如已创建过），忽略
+    }
+    return () => {
+      teardownPreviewAudio()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 音量变化时实时更新增益
+  useEffect(() => {
+    setPreviewVolume(settings.volume)
+    // 同时设置 video.volume 作为 fallback（WebAudio 不可用时 0~1 范围有效）
     if (ref.current) {
       ref.current.volume = Math.min(settings.volume, 1)
     }
   }, [settings.volume, ref])
+
+  // 播放时恢复 AudioContext（浏览器要求用户交互后才能发声）
+  const handlePlay = useCallback(() => {
+    resumePreviewAudio()
+  }, [])
 
   if (!videoUrl) return null
 
@@ -67,6 +94,7 @@ export default function VideoPlayer({ videoRef }: VideoPlayerProps) {
         src={videoUrl}
         className="w-full max-h-[60vh] object-contain"
         onTimeUpdate={handleTimeUpdate}
+        onPlay={handlePlay}
         controls
         playsInline
       />
