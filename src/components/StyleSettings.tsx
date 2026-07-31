@@ -144,6 +144,32 @@ export default function StyleSettings() {
           </div>
         )}
       </div>
+
+      {/* 音量倍率 */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-slate-500">音量倍率</label>
+          <span className="text-xs text-slate-700">
+            {settings.volume.toFixed(1)}x
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="3"
+          step="0.1"
+          value={settings.volume}
+          onChange={(e) =>
+            updateSettings({ volume: parseFloat(e.target.value) })
+          }
+          className="w-full"
+        />
+        <div className="flex justify-between text-[10px] text-slate-400">
+          <span>静音</span>
+          <span>原声</span>
+          <span>3x</span>
+        </div>
+      </div>
     </div>
   )
 }

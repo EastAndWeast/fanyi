@@ -17,6 +17,7 @@ export interface SubtitleSettings {
   fontSize: number
   background: boolean
   bgOpacity: number // 0-1
+  volume: number // 音量倍率：1 = 原声大小，>1 放大，<1 减小
 }
 
 // 翻译API配置
@@ -71,6 +72,7 @@ export const DEFAULT_SETTINGS: SubtitleSettings = {
   fontSize: 24,
   background: true,
   bgOpacity: 0.5,
+  volume: 1, // 默认与原声一样大
 }
 
 // 默认API配置

@@ -265,16 +265,21 @@ export async function burnSubtitlesToVideo(
     // 纯增益会削波（超出 [-1,1] 的波形被剪掉），响度提升有限还会破音；
     // 压限器把峰值压回安全范围，让整体响度真正提升
     const gainNode = audioCtx.createGain()
-    gainNode.gain.value = 3
-    const compressor = audioCtx.createDynamicsCompressor()
-    compressor.threshold.value = -10
-    compressor.knee.value = 6
-    compressor.ratio.value = 6
-    compressor.attack.value = 0.003
-    compressor.release.value = 0.25
+    gainNode.gain.value = settings.volume
     source.connect(gainNode)
-    gainNode.connect(compressor)
-    compressor.connect(dest)
+    // 倍率 > 1 时需要压限器防止削波失真；≤ 1 时直接输出
+    if (settings.volume > 1) {
+      const compressor = audioCtx.createDynamicsCompressor()
+      compressor.threshold.value = -10
+      compressor.knee.value = 6
+      compressor.ratio.value = 6
+      compressor.attack.value = 0.003
+      compressor.release.value = 0.25
+      gainNode.connect(compressor)
+      compressor.connect(dest)
+    } else {
+      gainNode.connect(dest)
+    }
     // 不连接到 audioCtx.destination，避免声音外放
 
     // 关键：muted 会让 MediaElementSource 输出静音信号（实测 RMS=0），

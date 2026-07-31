@@ -51,6 +51,13 @@ export default function VideoPlayer({ videoRef }: VideoPlayerProps) {
     }
   }, [activeSubtitleId, subtitles, ref])
 
+  // 应用音量倍率（HTML video.volume 上限为 1，超出部分仅导出时生效）
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.volume = Math.min(settings.volume, 1)
+    }
+  }, [settings.volume, ref])
+
   if (!videoUrl) return null
 
   return (
