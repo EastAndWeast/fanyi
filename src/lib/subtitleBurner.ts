@@ -217,25 +217,30 @@ export async function burnSubtitlesToVideo(
     }
   }
 
+  // 平台检测：移动端 rVFC/requestFrame 受解码性能和浏览器省电策略影响，
+  // 触发频率可能暴跌（15-20fps），导致录制帧率骤降、文件变小、播放卡顿。
+  // 移动端必须使用 captureStream(30) 自动采样 + rAF 循环（帧率有保证）
+  const isMobile = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
+
   // 创建 Canvas 视频流
-  // 优先使用 captureStream(0) 手动模式 + requestFrame()，
-  // 帧率完全匹配源视频，不会因固定 30fps 限制而丢帧。
-  // 浏览器不支持 requestFrame 时回退到 60fps 自动采集
+  // 桌面端：captureStream(0) 手动模式 + requestFrame()，帧率精确匹配源视频
+  // 移动端：captureStream(30) 自动采样（每 1/30s 采集最新 canvas 画面，帧率稳定）
   const probeStream = canvas.captureStream(0)
   const probeTrack = probeStream.getVideoTracks()[0] as any
   const supportsRequestFrame = typeof probeTrack?.requestFrame === 'function'
+  const useManualMode = supportsRequestFrame && !isMobile
 
   let canvasStream: MediaStream
-  if (supportsRequestFrame) {
+  if (useManualMode) {
     canvasStream = probeStream // 复用探测流
   } else {
     probeStream.getTracks().forEach((t) => t.stop())
-    canvasStream = canvas.captureStream(60)
+    canvasStream = canvas.captureStream(isMobile ? 30 : 60)
   }
   const videoTrack = canvasStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack & {
     requestFrame?: () => void
   }
-  console.log('[Burn] captureStream mode:', supportsRequestFrame ? 'manual (requestFrame)' : 'auto (60fps)')
+  console.log('[Burn] captureStream mode:', useManualMode ? 'manual (requestFrame)' : `auto (${isMobile ? 30 : 60}fps)`, '| mobile:', isMobile)
 
   // ========== 步骤1：启动视频播放（静音） ==========
   video.currentTime = 0
@@ -402,10 +407,9 @@ export async function burnSubtitlesToVideo(
       // 绘制字幕
       drawSubtitle(ctx, canvas, time, subtitles, settings)
 
-      // 手动请求帧采集：captureStream(0) 模式下，
-      // 必须显式调用 requestFrame() 才会将 canvas 当前画面采集到流中，
-      // 帧率完全匹配源视频，不丢帧不冗余
-      if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+      // 手动请求帧采集：仅在 manual 模式（captureStream(0)）下调用，
+      // 移动端自动采样模式无需调用
+      if (useManualMode && videoTrack && typeof videoTrack.requestFrame === 'function') {
         videoTrack.requestFrame()
       }
 
@@ -419,8 +423,8 @@ export async function burnSubtitlesToVideo(
 
     // 只用单一绘制循环，避免多循环叠加导致 CPU 过载、
     // 实时编码器丢帧和码率骤降
-    if ('requestVideoFrameCallback' in video) {
-      // 优先：与视频帧精确同步，每个新帧只绘制一次
+    if (!isMobile && 'requestVideoFrameCallback' in video) {
+      // 桌面端优先：与视频帧精确同步，每个新帧只绘制一次
       const rvfcDraw = () => {
         if (settled || recorder.state === 'inactive') return
         draw()
@@ -429,7 +433,8 @@ export async function burnSubtitlesToVideo(
       ;(video as any).requestVideoFrameCallback(rvfcDraw)
       console.log('[Burn] Using requestVideoFrameCallback for frame sync')
     } else {
-      // 回退：requestAnimationFrame
+      // 移动端/不支持时回退：requestAnimationFrame
+      // 移动端 rVFC 触发频率不可靠（省电/解码节流），rAF 保证 60fps 绘制
       rafId = requestAnimationFrame(function loop() {
         draw()
         if (recorder.state !== 'inactive') {
