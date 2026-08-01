@@ -8,6 +8,27 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 脚本执行错误提示（仅在不支持 ES Module 的旧内核中出错时显示，帮助定位白屏原因，ES5 语法） -->
+    <script>
+      var SHOW_FATAL = !('noModule' in document.createElement('script'));
+      function showFatal(msg) {
+        if (!SHOW_FATAL) return;
+        var box = document.getElementById('fatal-error');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'fatal-error';
+          box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;padding:12px;background:#fff3f3;color:#c00;font:12px/1.6 sans-serif;white-space:pre-wrap;word-break:break-all;border-bottom:2px solid #c00;';
+          document.body.appendChild(box);
+        }
+        box.textContent = msg;
+      }
+      window.addEventListener('error', function (e) {
+        showFatal('页面脚本出错：' + (e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || ''));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        showFatal('异步错误：' + ((e.reason && e.reason.message) || String(e.reason)));
+      });
+    </script>
     <!-- FFmpeg.wasm UMD 加载（必须用 UMD 而非 ESM，以确保 Worker 为 classic 类型） -->
     <script src="/ffmpeg/ffmpeg.js"></script>
     <script type="module" src="/src/main.tsx"></script>
