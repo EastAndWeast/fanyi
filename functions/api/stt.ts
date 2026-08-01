@@ -1,8 +1,9 @@
 // Cloudflare Pages Function: 语音识别 (Workers AI Whisper)
 // 接收音频 FormData，返回字幕片段数组
-// 注意：Whisper 的 audio 参数需传 base64 字符串（传 number[] 时 JSON 体积膨胀 3-4 倍，
-// 长音频会触发 Workers AI 错误 3006 "Request is too large"），
-// 大音频需按块转写再拼接（官方推荐做法）
+// 注意：@cf/openai/whisper 的 Workers binding 仅接受 number[] 作为 audio
+// （测试确认不支持 base64 string，报 5006 oneOf 不匹配），
+// 而 number[] JSON 膨胀约 3.5 倍，长音频单次请求会触发 3006 "Request is too large"，
+// 因此将音频按 30 秒分块逐块转写，再拼接时间戳偏移
 
 interface Env {
   AI: Ai
@@ -21,10 +22,11 @@ interface WhisperWord {
 }
 
 // 分块参数（16kHz / 16bit / 单声道 WAV，每秒 32000 字节）：
-// - 超过 CHUNK_MAX_BYTES 才分块（约 3.6 分钟），短视频保持单块识别质量最好
-// - 分块后每块约 3 分钟（5.76MB，base64 后约 7.7MB），远低于 Workers AI 请求限制
-const CHUNK_MAX_BYTES = 7 * 1024 * 1024
-const CHUNK_BYTES = 180 * 32000
+// - 超过 CHUNK_MAX_BYTES 才分块（30 秒），短视频保持单块识别质量最好
+// - 分块后每块 30 秒（960K numbers → JSON 约 3.3MB），远低于 Workers AI 3006 限制
+//   （社区报告 2MB 原始音频即 ~7MB JSON 触发 3006，30 秒块 3.3MB 有充足余量）
+const CHUNK_MAX_BYTES = 30 * 32000
+const CHUNK_BYTES = 30 * 32000
 
 /**
  * 将 WAV 二进制按字节切片为多段独立 WAV（重写每段的文件头）
@@ -53,19 +55,6 @@ function sliceWav(buffer: ArrayBuffer): ArrayBuffer[] {
     chunks.push(chunk.buffer as ArrayBuffer)
   }
   return chunks
-}
-
-/**
- * Uint8Array 转 base64（分块拼接避免展开超大参数列表爆栈）
- * btoa 是 Cloudflare Workers 全局 API，无需 nodejs_compat
- */
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const STEP = 0x8000
-  for (let i = 0; i < bytes.length; i += STEP) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + STEP))
-  }
-  return btoa(binary)
 }
 
 // 解析 WebVTT 时间戳为秒数
@@ -186,7 +175,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return Response.json({ error: '未找到音频文件' }, { status: 400 })
     }
 
-    // 将音频切片（短视频单块，长音频按 3 分钟分块）并转 base64 供 Workers AI 使用
+    // 将音频切片（短视频单块，长音频按 30 秒分块），每块转 number[] 供 Workers AI 使用
     const audioArrayBuffer = await audioFile.arrayBuffer()
     const chunks = sliceWav(audioArrayBuffer)
     console.log(
@@ -198,8 +187,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // 逐块转写（串行，避免并发触发限流）
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
-      const audioBase64 = bytesToBase64(new Uint8Array(chunk))
-      console.log(`[STT] Chunk ${i + 1}/${chunks.length}: ${chunk.byteLength} bytes`)
+      const audioBytes = Array.from(new Uint8Array(chunk))
+      console.log(
+        `[STT] Chunk ${i + 1}/${chunks.length}: ${audioBytes.length} numbers (${chunk.byteLength} bytes)`
+      )
 
       // 调用 Workers AI Whisper 模型
       let result: {
@@ -209,22 +200,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         words?: WhisperWord[]
       }
       try {
-        // 运行时 audio 参数接受 base64 字符串（官方文档
-        // build-a-workers-ai-whisper-with-chunking 即用 audio: base64），
-        // workers-types 类型定义滞后仅声明 number[]，故放宽输入类型
-        result = await (env.AI.run as (
-          model: string,
-          inputs: { audio: string; language?: string },
-          options?: unknown
-        ) => Promise<{
+        // workers-types 的 whisper 类型未声明 language 字段，但运行时需要它
+        // （不传 language 在多语言音频时会报 3010），用类型断言绕过
+        result = await env.AI.run('@cf/openai/whisper', {
+          audio: audioBytes,
+          language: 'en',
+        } as { audio: number[] }) as {
           text?: string
           vtt?: string
           word_count?: number
           words?: WhisperWord[]
-        }>)('@cf/openai/whisper', {
-          audio: audioBase64,
-          language: 'en',
-        })
+        }
       } catch (aiError) {
         console.error(`[STT] Workers AI error (chunk ${i + 1}):`, aiError)
         const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
