@@ -29,28 +29,98 @@ const CHUNK_MAX_BYTES = 30 * 32000
 const CHUNK_BYTES = 30 * 32000
 
 /**
- * 将 WAV 二进制按字节切片为多段独立 WAV（重写每段的文件头）
- * WAV 结构：44 字节 RIFF 头 + PCM 数据（16kHz 单声道 16bit）
+ * 动态解析 WAV 结构，提取 fmt 参数和 data chunk 位置。
+ * ffmpeg.wasm 生成的 WAV 可能含额外 chunk（LIST/fact 等），头部不一定 44 字节。
+ */
+interface WavParsed {
+  sampleRate: number
+  numChannels: number
+  bitsPerSample: number
+  dataOffset: number
+  dataLength: number
+}
+
+function parseWav(buffer: ArrayBuffer): WavParsed | null {
+  const bytes = new Uint8Array(buffer)
+  const dv = new DataView(buffer)
+  // 校验 RIFF/WAVE 标记
+  if (
+    String.fromCharCode(...bytes.subarray(0, 4)) !== 'RIFF' ||
+    String.fromCharCode(...bytes.subarray(8, 12)) !== 'WAVE'
+  ) {
+    return null
+  }
+
+  let sampleRate = 16000
+  let numChannels = 1
+  let bitsPerSample = 16
+  let dataOffset = -1
+  let dataLength = 0
+
+  // 遍历子 chunk（从 offset 12 开始）
+  let pos = 12
+  while (pos + 8 <= bytes.length) {
+    const chunkId = String.fromCharCode(...bytes.subarray(pos, pos + 4))
+    const chunkSize = dv.getUint32(pos + 4, true)
+    if (chunkId === 'fmt ') {
+      numChannels = dv.getUint16(pos + 10, true)
+      sampleRate = dv.getUint32(pos + 12, true)
+      bitsPerSample = dv.getUint16(pos + 22, true)
+    } else if (chunkId === 'data') {
+      dataOffset = pos + 8
+      dataLength = chunkSize
+      break
+    }
+    // chunk 按偶数对齐
+    pos += 8 + chunkSize + (chunkSize % 2)
+  }
+
+  if (dataOffset === -1) return null
+  return { sampleRate, numChannels, bitsPerSample, dataOffset, dataLength }
+}
+
+/**
+ * 将 WAV 按时长切片为多段独立的标准 44 字节 PCM WAV。
+ * 动态解析原始 WAV 结构（不假设头恰好 44 字节），每块用全新的标准头部。
  */
 function sliceWav(buffer: ArrayBuffer): ArrayBuffer[] {
-  const bytes = new Uint8Array(buffer)
-  if (bytes.length <= 44 + CHUNK_MAX_BYTES) return [buffer]
+  const parsed = parseWav(buffer)
+  if (!parsed) return [buffer] // 非标准 WAV，不切片直接整体返回
 
-  const header = bytes.subarray(0, 44)
-  const data = bytes.subarray(44)
+  const bytesPerSec = parsed.sampleRate * parsed.numChannels * (parsed.bitsPerSample / 8)
+  const actualDataLength = Math.min(
+    parsed.dataLength,
+    buffer.byteLength - parsed.dataOffset
+  )
+
+  // 短音频不分块
+  if (actualDataLength <= CHUNK_MAX_BYTES) return [buffer]
+
+  const bytes = new Uint8Array(buffer)
+  const data = bytes.subarray(parsed.dataOffset, parsed.dataOffset + actualDataLength)
   const chunks: ArrayBuffer[] = []
 
   for (let offset = 0; offset < data.length; offset += CHUNK_BYTES) {
     const chunkData = data.subarray(offset, Math.min(offset + CHUNK_BYTES, data.length))
-    // 重建头：修正 RIFF size（offset 4）和 data size（offset 40）
-    const chunkHeader = new Uint8Array(44)
-    chunkHeader.set(header)
-    const dv = new DataView(chunkHeader.buffer)
+    // 为每块构建标准 44 字节 PCM WAV 头
+    const header = new Uint8Array(44)
+    const dv = new DataView(header.buffer)
+    header.set([0x52, 0x49, 0x46, 0x46], 0) // "RIFF"
     dv.setUint32(4, 36 + chunkData.length, true)
+    header.set([0x57, 0x41, 0x56, 0x45], 8) // "WAVE"
+    header.set([0x66, 0x6d, 0x74, 0x20], 12) // "fmt "
+    dv.setUint32(16, 16, true) // PCM fmt size
+    dv.setUint16(20, 1, true) // audioFormat = PCM
+    dv.setUint16(22, parsed.numChannels, true)
+    dv.setUint32(24, parsed.sampleRate, true)
+    dv.setUint32(28, bytesPerSec, true)
+    dv.setUint16(32, parsed.numChannels * (parsed.bitsPerSample / 8), true) // blockAlign
+    dv.setUint16(34, parsed.bitsPerSample, true)
+    header.set([0x64, 0x61, 0x74, 0x61], 36) // "data"
     dv.setUint32(40, chunkData.length, true)
 
     const chunk = new Uint8Array(44 + chunkData.length)
-    chunk.set(chunkHeader)
+    chunk.set(header)
     chunk.set(chunkData, 44)
     chunks.push(chunk.buffer as ArrayBuffer)
   }
@@ -214,6 +284,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       } catch (aiError) {
         console.error(`[STT] Workers AI error (chunk ${i + 1}):`, aiError)
         const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
+        // 3010 "Invalid audio input"：该块可能是纯静音/噪声段，跳过继续下一块
+        if (errMsg.includes('Invalid audio input') || errMsg.includes('3010')) {
+          console.warn(`[STT] Chunk ${i + 1} skipped (invalid/silent audio)`) 
+          continue
+        }
         // 如果是内部错误，返回更友好的信息
         if (errMsg.includes('internal error')) {
           return Response.json(
