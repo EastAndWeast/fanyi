@@ -41,6 +41,20 @@ function getSupportedMimeType(): { mimeType: string; extension: string } {
 }
 
 /**
+ * 根据分辨率动态计算视频码率（H.264）
+ * 码率不足会导致压缩过度、画面模糊、文件偏小
+ */
+function getVideoBitrate(w: number, h: number): number {
+  const pixels = w * h
+  if (pixels >= 3_840 * 2160) return 30_000_000 // 4K
+  if (pixels >= 2560 * 1440) return 16_000_000 // 1440p
+  if (pixels >= 1920 * 1080) return 12_000_000 // 1080p
+  if (pixels >= 1280 * 720) return 8_000_000 // 720p
+  if (pixels >= 640 * 480) return 5_000_000 // 480p
+  return 3_000_000
+}
+
+/**
  * 在 Canvas 上绘制字幕
  */
 function drawSubtitle(
@@ -204,7 +218,24 @@ export async function burnSubtitlesToVideo(
   }
 
   // 创建 Canvas 视频流
-  const canvasStream = canvas.captureStream(30) // 30fps
+  // 优先使用 captureStream(0) 手动模式 + requestFrame()，
+  // 帧率完全匹配源视频，不会因固定 30fps 限制而丢帧。
+  // 浏览器不支持 requestFrame 时回退到 60fps 自动采集
+  const probeStream = canvas.captureStream(0)
+  const probeTrack = probeStream.getVideoTracks()[0] as any
+  const supportsRequestFrame = typeof probeTrack?.requestFrame === 'function'
+
+  let canvasStream: MediaStream
+  if (supportsRequestFrame) {
+    canvasStream = probeStream // 复用探测流
+  } else {
+    probeStream.getTracks().forEach((t) => t.stop())
+    canvasStream = canvas.captureStream(60)
+  }
+  const videoTrack = canvasStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack & {
+    requestFrame?: () => void
+  }
+  console.log('[Burn] captureStream mode:', supportsRequestFrame ? 'manual (requestFrame)' : 'auto (60fps)')
 
   // ========== 步骤1：启动视频播放（静音） ==========
   video.currentTime = 0
@@ -302,9 +333,11 @@ export async function burnSubtitlesToVideo(
 
   // ========== 步骤3：创建录制器并开始录制 ==========
   const { mimeType, extension } = getSupportedMimeType()
+  const videoBitrate = getVideoBitrate(videoW, videoH)
+  console.log(`[Burn] Resolution: ${videoW}x${videoH}, video bitrate: ${videoBitrate / 1_000_000}Mbps`)
   const recorder = new MediaRecorder(combinedStream, {
     mimeType,
-    videoBitsPerSecond: 5_000_000,
+    videoBitsPerSecond: videoBitrate,
     audioBitsPerSecond: 192_000,
   })
 
@@ -368,6 +401,13 @@ export async function burnSubtitlesToVideo(
 
       // 绘制字幕
       drawSubtitle(ctx, canvas, time, subtitles, settings)
+
+      // 手动请求帧采集：captureStream(0) 模式下，
+      // 必须显式调用 requestFrame() 才会将 canvas 当前画面采集到流中，
+      // 帧率完全匹配源视频，不丢帧不冗余
+      if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+        videoTrack.requestFrame()
+      }
 
       lastDrawAt = performance.now()
 
