@@ -11,7 +11,7 @@ export default function App() {
   return (
     <div className="h-full flex flex-col bg-slate-50">
       <Header />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-y-auto lg:overflow-hidden">
         {step === 'upload' && <UploadZone />}
         {step === 'processing' && <ProcessingView />}
         {step === 'editor' && <EditorView />}

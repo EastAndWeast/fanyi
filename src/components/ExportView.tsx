@@ -16,6 +16,8 @@ export default function ExportView() {
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState<'recording' | 'muxing'>('recording')
   const [error, setError] = useState('')
+  const [exportedUrl, setExportedUrl] = useState<string | null>(null)
+  const [exportedName, setExportedName] = useState('')
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const handleExportVideo = async () => {
@@ -91,9 +93,14 @@ export default function ExportView() {
         console.warn('[Export] 音频混流失败，使用录制原始结果:', muxErr)
       }
 
-      // 下载结果
+      // 尝试自动下载（桌面浏览器有效，微信等内嵌浏览器无效）
       const baseName = videoFile.name.replace(/\.[^.]+$/, '')
-      downloadBlob(finalBlob, `${baseName}_subtitles.${result.extension}`)
+      const fileName = `${baseName}_subtitles.${result.extension}`
+      downloadBlob(finalBlob, fileName)
+
+      // 同时生成预览 URL（微信等无法自动下载时，用户可长按预览视频保存）
+      setExportedUrl(URL.createObjectURL(finalBlob))
+      setExportedName(fileName)
       setProgress(1)  // 确保进度显示为 100%
     } catch (err) {
       if (err instanceof Error && err.message === '用户取消') {
@@ -186,13 +193,53 @@ export default function ExportView() {
           )}
 
           {!exporting && progress >= 1 && (
-            <p className="text-xs text-green-600">导出完成！文件已开始下载。</p>
+            <div className="space-y-3">
+              <p className="text-xs text-green-600 font-medium">导出完成！</p>
+              <p className="text-xs text-slate-500">
+                文件已开始下载。如果未自动下载（如微信内），请播放下方预览视频，长按画面选择「保存视频」。
+              </p>
+              <button
+                onClick={() => {
+                  if (exportedUrl) {
+                    const a = document.createElement('a')
+                    a.href = exportedUrl
+                    a.download = exportedName
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                  }
+                }}
+                className="w-full rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 text-sm font-medium transition-colors"
+              >
+                重新下载
+              </button>
+            </div>
           )}
 
           {error && (
             <p className="text-xs text-red-500">{error}</p>
           )}
         </div>
+
+        {/* 导出结果预览（微信等无法自动下载时长按保存） */}
+        {!exporting && exportedUrl && (
+          <div className="rounded-xl bg-white border border-slate-200 p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800 mb-1">
+                预览导出结果
+              </h3>
+              <p className="text-xs text-slate-400">
+                长按视频画面可保存到相册（微信/手机浏览器）
+              </p>
+            </div>
+            <video
+              src={exportedUrl}
+              controls
+              playsInline
+              className="w-full rounded-lg bg-black max-h-[40vh] lg:max-h-[50vh] object-contain"
+            />
+          </div>
+        )}
 
         {/* 导出字幕文件 */}
         <div className="rounded-xl bg-white border border-slate-200 p-4 space-y-3">

@@ -92,7 +92,7 @@ export default function VideoPlayer({ videoRef }: VideoPlayerProps) {
       <video
         ref={ref}
         src={videoUrl}
-        className="w-full max-h-[60vh] object-contain"
+        className="w-full max-h-[35vh] lg:max-h-[60vh] object-contain"
         onTimeUpdate={handleTimeUpdate}
         onPlay={handlePlay}
         controls

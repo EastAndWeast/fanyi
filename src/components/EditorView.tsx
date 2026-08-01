@@ -95,7 +95,7 @@ export default function EditorView() {
         </div>
 
         {/* 内容区域 */}
-        <div className="flex-1 overflow-hidden p-3 max-h-[50vh] lg:max-h-[calc(100vh-280px)]">
+        <div className="flex-1 overflow-y-auto p-3 lg:max-h-[calc(100vh-280px)]">
           {tab === 'subtitles' && <SubtitleList />}
           {tab === 'style' && <StyleSettings />}
           {tab === 'api' && <ApiKeySettings compact />}
