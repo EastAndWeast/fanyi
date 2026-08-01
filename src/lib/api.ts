@@ -55,13 +55,39 @@ export function normalizeEndpoint(endpoint: string): string {
   return url
 }
 
+// 每批翻译的最大条数：Workers AI GLM 模型 max_tokens 有限（4096），
+// 一次性翻译过多条会导致 JSON 输出截断，所有翻译变空。实测 40 条以下稳定。
+const TRANSLATE_BATCH_SIZE = 40
+
 /**
- * 调用后端翻译接口
+ * 调用后端翻译接口（自动分批，避免长视频一次性翻译超出模型 token 限制）
  * @param config API 配置
  * @param texts 待翻译的英文字幕文本数组
  * @returns 中文翻译数组
  */
 export async function callTranslate(
+  config: ApiConfig,
+  texts: string[]
+): Promise<string[]> {
+  // 少量文本直接单次请求
+  if (texts.length <= TRANSLATE_BATCH_SIZE) {
+    return callTranslateBatch(config, texts)
+  }
+
+  // 分批翻译后合并结果
+  const results: string[] = []
+  for (let i = 0; i < texts.length; i += TRANSLATE_BATCH_SIZE) {
+    const batch = texts.slice(i, i + TRANSLATE_BATCH_SIZE)
+    const translations = await callTranslateBatch(config, batch)
+    results.push(...translations)
+  }
+  return results
+}
+
+/**
+ * 单批翻译请求（内部函数）
+ */
+async function callTranslateBatch(
   config: ApiConfig,
   texts: string[]
 ): Promise<string[]> {
