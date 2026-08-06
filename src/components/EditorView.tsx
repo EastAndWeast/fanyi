@@ -13,6 +13,7 @@ export default function EditorView() {
   const subtitles = useStore((s) => s.subtitles)
   const setSubtitles = useStore((s) => s.setSubtitles)
   const apiConfig = useStore((s) => s.apiConfig)
+  const mediaKind = useStore((s) => s.mediaKind)
 
   const [tab, setTab] = useState<TabType>('subtitles')
   const [retranslating, setRetranslating] = useState(false)
@@ -53,6 +54,12 @@ export default function EditorView() {
       <div className="flex-1 flex flex-col gap-3 min-w-0">
         <VideoPlayer />
 
+        {mediaKind === 'audio' && (
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            纯音频模式：部分格式（如 AC3）浏览器无法试听，不影响字幕生成与下载。
+          </p>
+        )}
+
         {/* 操作按钮 */}
         <div className="flex gap-2">
           <button
@@ -66,7 +73,7 @@ export default function EditorView() {
             onClick={() => setStep('export')}
             className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 text-sm font-medium transition-colors"
           >
-            导出视频
+            {mediaKind === 'audio' ? '导出字幕' : '导出视频'}
           </button>
         </div>
 

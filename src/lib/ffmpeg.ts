@@ -150,7 +150,7 @@ export async function extractAudio(
   await ff.writeFile(inputName, await fetchFileData(videoFile))
 
   onLog?.('正在提取音频...')
-  await ff.exec([
+  const code = await ff.exec([
     '-i', inputName,
     '-vn',
     '-ar', '16000',
@@ -158,6 +158,11 @@ export async function extractAudio(
     '-f', 'wav',
     outputName,
   ])
+
+  if (code !== 0) {
+    // 纯音频场景下最常见的原因：ffmpeg.wasm 默认编译不含该编码的 decoder
+    throw new Error('音频提取失败：浏览器（ffmpeg.wasm）可能不支持该音频编码，请尝试转换为 WAV/MP3 后重试')
+  }
 
   const data = await ff.readFile(outputName)
 

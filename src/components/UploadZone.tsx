@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useStore } from '../store'
+import { useStore, isMediaFile } from '../store'
 import { getFFmpegMode } from '../lib/ffmpeg'
 import ApiKeySettings from './ApiKeySettings'
 import { API_PRESETS } from '../types'
@@ -17,8 +17,9 @@ export default function UploadZone() {
   const hasApiKey = Boolean(apiConfig.apiKey.trim())
 
   const handleFile = (file: File) => {
-    if (!file.type.startsWith('video/')) {
-      alert('请上传视频文件')
+    // 统一用 isMediaFile 判定（MIME 缺失时靠扩展名兜底，如 AC3）
+    if (!isMediaFile(file)) {
+      alert('请上传视频或音频文件')
       return
     }
     setVideo(file)
@@ -127,7 +128,7 @@ export default function UploadZone() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/*"
+            accept="video/*,audio/*,.ac3,.eac3,.aac,.m4a,.mp3,.wav,.flac,.ogg,.opus"
             onChange={handleChange}
             className="hidden"
           />
@@ -150,14 +151,14 @@ export default function UploadZone() {
             </div>
             <div>
               <p className="text-lg font-medium text-slate-800">
-                拖拽视频到此处
+                拖拽视频或音频到此处
               </p>
               <p className="text-sm text-slate-500 mt-1">
                 或点击选择文件
               </p>
             </div>
             <p className="text-xs text-slate-400">
-              支持 MP4、WebM、MOV 等格式
+              支持 MP4、WebM、MOV，以及 MP3、WAV、M4A、AC3 等
             </p>
           </div>
         </div>

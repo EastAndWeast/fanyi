@@ -9,6 +9,7 @@ export default function ExportView() {
   const subtitles = useStore((s) => s.subtitles)
   const settings = useStore((s) => s.settings)
   const videoFile = useStore((s) => s.videoFile)
+  const mediaKind = useStore((s) => s.mediaKind)
   const setStep = useStore((s) => s.setStep)
   const reset = useStore((s) => s.reset)
 
@@ -147,7 +148,15 @@ export default function ExportView() {
 
       {/* 右侧：导出选项 */}
       <div className="w-full lg:w-96 space-y-4">
-        {/* 导出视频 */}
+        {/* 导出视频（音频模式无此步骤，改为提示卡） */}
+        {mediaKind === 'audio' ? (
+          <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-blue-700">纯音频模式</h3>
+            <p className="text-xs text-blue-600 leading-relaxed">
+              无需压制画面，请直接下载下方的字幕文件（SRT / VTT）即可外挂播放。
+            </p>
+          </div>
+        ) : (
         <div className="rounded-xl bg-white border border-slate-200 p-4 space-y-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-800 mb-1">
@@ -220,6 +229,7 @@ export default function ExportView() {
             <p className="text-xs text-red-500">{error}</p>
           )}
         </div>
+        )}
 
         {/* 导出结果预览（微信等无法自动下载时长按保存） */}
         {!exporting && exportedUrl && (
@@ -329,7 +339,7 @@ export default function ExportView() {
           onClick={reset}
           className="w-full rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2.5 text-sm font-medium transition-colors"
         >
-          处理新视频
+          处理新文件
         </button>
       </div>
     </div>

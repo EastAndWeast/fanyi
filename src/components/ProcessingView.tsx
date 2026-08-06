@@ -24,6 +24,7 @@ const STAGES: ProcessingStage[] = [
 
 export default function ProcessingView() {
   const videoFile = useStore((s) => s.videoFile)
+  const mediaKind = useStore((s) => s.mediaKind)
   const apiConfig = useStore((s) => s.apiConfig)
   const setSubtitles = useStore((s) => s.setSubtitles)
   const setStep = useStore((s) => s.setStep)
@@ -32,6 +33,10 @@ export default function ProcessingView() {
   const [stage, setStage] = useState<ProcessingStage>('idle')
   const [error, setError] = useState('')
   const startedRef = useRef(false)
+
+  // 纯音频模式下，「提取音频」实际是转码为 WAV，文案需相应调整
+  const extractingDesc =
+    mediaKind === 'audio' ? '正在转换音频格式...' : '正在从视频中提取音频...'
 
   useEffect(() => {
     if (startedRef.current) return
@@ -138,7 +143,11 @@ export default function ProcessingView() {
             {STAGE_INFO[stage].label}
           </h2>
           <p className="text-sm text-slate-500">
-            {stage === 'error' ? error : STAGE_INFO[stage].desc}
+            {stage === 'error'
+              ? error
+              : stage === 'extracting'
+                ? extractingDesc
+                : STAGE_INFO[stage].desc}
           </p>
         </div>
 
@@ -182,7 +191,7 @@ export default function ProcessingView() {
                       {STAGE_INFO[s].label}
                     </p>
                     <p className="text-xs text-slate-400 truncate">
-                      {STAGE_INFO[s].desc}
+                      {s === 'extracting' ? extractingDesc : STAGE_INFO[s].desc}
                     </p>
                   </div>
                 </div>
