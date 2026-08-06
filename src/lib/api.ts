@@ -20,6 +20,9 @@ interface TranslateResponse {
 const CHUNK_MAX_BYTES = 30 * 32000
 const CHUNK_BYTES = 30 * 32000
 const STT_MAX_RETRIES = 2
+// 并发请求数：Cloudflare Workers AI 免费版可承受 3 路并发，
+// 太多会触发限流。3 路可将 20 块的识别时间从 ~5 分钟降到 ~2 分钟。
+const STT_CONCURRENCY = 3
 
 interface WavParsed {
   sampleRate: number
@@ -108,10 +111,56 @@ function sliceWav(buffer: ArrayBuffer): ArrayBuffer[] {
 }
 
 /**
+ * 单块 STT 请求（含自动重试）
+ * 返回该块识别到的字幕片段（可为空数组——纯音乐/背景音块）
+ */
+async function processSTTChunk(
+  chunk: ArrayBuffer,
+  chunkIndex: number,
+  totalChunks: number
+): Promise<STTResponse> {
+  let lastError: Error | null = null
+
+  for (let retry = 0; retry <= STT_MAX_RETRIES; retry++) {
+    try {
+      const formData = new FormData()
+      const blob = new Blob([chunk], { type: 'audio/wav' })
+      formData.append('audio', blob, 'audio.wav')
+
+      const response = await fetch('/api/stt', {
+        method: 'POST',
+        body: formData,
+      })
+
+      // 422 = "未能识别到语音内容"：该块可能为纯音乐/背景音/静音，
+      // 属于正常情况，跳过该块继续后续识别，不中断整个流程
+      if (response.status === 422) {
+        console.warn(`[STT] Chunk ${chunkIndex + 1}/${totalChunks} returned 422 (no speech detected), skipping`)
+        return { segments: [] }
+      }
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || `语音识别失败 (${response.status})`)
+      }
+
+      return (await response.json()) as STTResponse
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      if (retry < STT_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 1000 * (retry + 1)))
+      }
+    }
+  }
+
+  throw lastError || new Error('语音识别失败')
+}
+
+/**
  * 调用后端 STT 接口（Workers AI Whisper）
  *
- * 前端将 WAV 按 30 秒切分，每块单独发送一个请求，避免长音频在后端
- * 串行处理时触发 Cloudflare 524 超时。
+ * 前端将 WAV 按 30 秒切分，每块单独发送请求（STT_CONCURRENCY 路并发），
+ * 避免长音频在后端串行处理时触发 Cloudflare 524 超时。
  *
  * @param audioWav WAV 格式的 ArrayBuffer（16kHz 单声道 16-bit）
  * @param onProgress 进度回调（已完成块数, 总块数）
@@ -122,59 +171,36 @@ export async function callSTT(
   onProgress?: (completed: number, total: number) => void
 ): Promise<SubtitleSegment[]> {
   const chunks = sliceWav(audioWav)
+  const total = chunks.length
+  onProgress?.(0, total)
+
+  // 并发池：同时最多 STT_CONCURRENCY 个请求
+  const results: STTResponse[] = new Array(total)
+  let completed = 0
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < total) {
+      const i = nextIndex++
+      results[i] = await processSTTChunk(chunks[i], i, total)
+      completed++
+      onProgress?.(completed, total)
+    }
+  }
+
+  // 启动 STT_CONCURRENCY 个 worker 并等待全部完成
+  const workers: Promise<void>[] = []
+  for (let w = 0; w < Math.min(STT_CONCURRENCY, total); w++) {
+    workers.push(worker())
+  }
+  await Promise.all(workers)
+
+  // 按块顺序合并结果（带时间偏移）
   const allSegments: SubtitleSegment[] = []
   let segId = 0
-
-  for (let i = 0; i < chunks.length; i++) {
-    onProgress?.(i, chunks.length)
-
-    let data: STTResponse | null = null
-    let lastError: Error | null = null
-
-    // 单块最多重试 STT_MAX_RETRIES 次（应对偶发的 524 / 网络波动）
-    for (let retry = 0; retry <= STT_MAX_RETRIES; retry++) {
-      try {
-        const formData = new FormData()
-        const blob = new Blob([chunks[i]], { type: 'audio/wav' })
-        formData.append('audio', blob, 'audio.wav')
-
-        const response = await fetch('/api/stt', {
-          method: 'POST',
-          body: formData,
-        })
-
-        // 422 = "未能识别到语音内容"：该块可能为纯音乐/背景音/静音，
-        // 属于正常情况，跳过该块继续后续识别，不中断整个流程
-        if (response.status === 422) {
-          console.warn(`[STT] Chunk ${i + 1}/${chunks.length} returned 422 (no speech detected), skipping`)
-          data = { segments: [] }
-          lastError = null
-          break
-        }
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}))
-          throw new Error(err.error || `语音识别失败 (${response.status})`)
-        }
-
-        data = (await response.json()) as STTResponse
-        lastError = null
-        break
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err))
-        // 最后一次重试不再等待
-        if (retry < STT_MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, 1000 * (retry + 1)))
-        }
-      }
-    }
-
-    if (lastError) throw lastError
-    if (!data) throw new Error('语音识别失败')
-
-    // 按块起始时间偏移后合并（segments 可能为空——该块无语音）
+  for (let i = 0; i < total; i++) {
     const offsetSeconds = (i * CHUNK_BYTES) / 32000
-    for (const seg of data.segments) {
+    for (const seg of results[i].segments) {
       allSegments.push({
         id: segId++,
         start: seg.start + offsetSeconds,
@@ -184,8 +210,6 @@ export async function callSTT(
       })
     }
   }
-
-  onProgress?.(chunks.length, chunks.length)
 
   if (allSegments.length === 0) {
     throw new Error(
@@ -215,11 +239,13 @@ export function normalizeEndpoint(endpoint: string): string {
 // 从 40 降到 20：批次过大会增加 GLM 推理时间，触发 Cloudflare 524 超时
 const TRANSLATE_BATCH_SIZE = 20
 const TRANSLATE_MAX_RETRIES = 2
+// 翻译并发数：3 路可将 8 批的翻译时间从 ~5 分钟降到 ~2 分钟
+const TRANSLATE_CONCURRENCY = 3
 
 /**
- * 调用后端翻译接口（自动分批，避免长视频一次性翻译超出模型 token 限制）
+ * 调用后端翻译接口（自动分批 + 并发请求）
  *
- * 每批含自动重试（应对偶发的 Cloudflare 524 超时），并支持进度回调。
+ * 每批含自动重试（应对偶发的 Cloudflare 524 超时），TRANSLATE_CONCURRENCY 路并发发送。
  *
  * @param config API 配置
  * @param texts 待翻译的英文字幕文本数组
@@ -231,27 +257,40 @@ export async function callTranslate(
   texts: string[],
   onProgress?: (completed: number, total: number) => void
 ): Promise<string[]> {
-  const totalBatches = Math.ceil(texts.length / TRANSLATE_BATCH_SIZE)
-
-  // 少量文本直接单次请求
-  if (texts.length <= TRANSLATE_BATCH_SIZE) {
-    onProgress?.(0, 1)
-    const result = await callTranslateBatchWithRetry(config, texts)
-    onProgress?.(1, 1)
-    return result
-  }
-
-  // 分批翻译后合并结果
-  const results: string[] = []
+  // 将文本切分为多个批次
+  const batches: string[][] = []
   for (let i = 0; i < texts.length; i += TRANSLATE_BATCH_SIZE) {
-    const batchIndex = Math.floor(i / TRANSLATE_BATCH_SIZE)
-    onProgress?.(batchIndex, totalBatches)
-    const batch = texts.slice(i, i + TRANSLATE_BATCH_SIZE)
-    const translations = await callTranslateBatchWithRetry(config, batch)
-    results.push(...translations)
+    batches.push(texts.slice(i, i + TRANSLATE_BATCH_SIZE))
   }
-  onProgress?.(totalBatches, totalBatches)
-  return results
+  const totalBatches = batches.length
+  onProgress?.(0, totalBatches)
+
+  // 并发池：同时最多 TRANSLATE_CONCURRENCY 个批次
+  const results: string[][] = new Array(totalBatches)
+  let completed = 0
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < totalBatches) {
+      const i = nextIndex++
+      results[i] = await callTranslateBatchWithRetry(config, batches[i])
+      completed++
+      onProgress?.(completed, totalBatches)
+    }
+  }
+
+  const workers: Promise<void>[] = []
+  for (let w = 0; w < Math.min(TRANSLATE_CONCURRENCY, totalBatches); w++) {
+    workers.push(worker())
+  }
+  await Promise.all(workers)
+
+  // 按批次顺序合并结果
+  const merged: string[] = []
+  for (let i = 0; i < totalBatches; i++) {
+    merged.push(...results[i])
+  }
+  return merged
 }
 
 /**
