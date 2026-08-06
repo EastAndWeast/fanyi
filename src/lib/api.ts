@@ -200,59 +200,95 @@ export function normalizeEndpoint(endpoint: string): string {
 }
 
 // 每批翻译的最大条数：Workers AI GLM 模型 max_tokens 有限（4096），
-// 一次性翻译过多条会导致 JSON 输出截断，所有翻译变空。实测 40 条以下稳定。
-const TRANSLATE_BATCH_SIZE = 40
+// 一次性翻译过多条会导致 JSON 输出截断，所有翻译变空。
+// 从 40 降到 20：批次过大会增加 GLM 推理时间，触发 Cloudflare 524 超时
+const TRANSLATE_BATCH_SIZE = 20
+const TRANSLATE_MAX_RETRIES = 2
 
 /**
  * 调用后端翻译接口（自动分批，避免长视频一次性翻译超出模型 token 限制）
+ *
+ * 每批含自动重试（应对偶发的 Cloudflare 524 超时），并支持进度回调。
+ *
  * @param config API 配置
  * @param texts 待翻译的英文字幕文本数组
+ * @param onProgress 进度回调（已完成批数, 总批数）
  * @returns 中文翻译数组
  */
 export async function callTranslate(
   config: ApiConfig,
-  texts: string[]
+  texts: string[],
+  onProgress?: (completed: number, total: number) => void
 ): Promise<string[]> {
+  const totalBatches = Math.ceil(texts.length / TRANSLATE_BATCH_SIZE)
+
   // 少量文本直接单次请求
   if (texts.length <= TRANSLATE_BATCH_SIZE) {
-    return callTranslateBatch(config, texts)
+    onProgress?.(0, 1)
+    const result = await callTranslateBatchWithRetry(config, texts)
+    onProgress?.(1, 1)
+    return result
   }
 
   // 分批翻译后合并结果
   const results: string[] = []
   for (let i = 0; i < texts.length; i += TRANSLATE_BATCH_SIZE) {
+    const batchIndex = Math.floor(i / TRANSLATE_BATCH_SIZE)
+    onProgress?.(batchIndex, totalBatches)
     const batch = texts.slice(i, i + TRANSLATE_BATCH_SIZE)
-    const translations = await callTranslateBatch(config, batch)
+    const translations = await callTranslateBatchWithRetry(config, batch)
     results.push(...translations)
   }
+  onProgress?.(totalBatches, totalBatches)
   return results
 }
 
 /**
- * 单批翻译请求（内部函数）
+ * 单批翻译请求（含自动重试）
+ *
+ * Cloudflare Pages Functions 有网关超时限制（约 100 秒），
+ * Workers AI GLM 模型偶尔响应较慢会触发 524。
+ * 自动重试 2 次，每次间隔递增。
  */
-async function callTranslateBatch(
+async function callTranslateBatchWithRetry(
   config: ApiConfig,
   texts: string[]
 ): Promise<string[]> {
-  const response = await fetch('/api/translate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      endpoint: normalizeEndpoint(config.endpoint),
-      apiKey: config.apiKey,
-      model: config.model,
-      texts,
-    }),
-  })
+  let lastError: Error | null = null
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.error || `翻译失败 (${response.status})`)
+  for (let retry = 0; retry <= TRANSLATE_MAX_RETRIES; retry++) {
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: normalizeEndpoint(config.endpoint),
+          apiKey: config.apiKey,
+          model: config.model,
+          texts,
+        }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || `翻译失败 (${response.status})`)
+      }
+
+      const data = (await response.json()) as TranslateResponse
+      return data.translations
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      // 额度用尽类错误不重试
+      if (lastError.message.includes('额度已用完')) {
+        throw lastError
+      }
+      if (retry < TRANSLATE_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 2000 * (retry + 1)))
+      }
+    }
   }
 
-  const data = (await response.json()) as TranslateResponse
-  return data.translations
+  throw lastError || new Error('翻译失败')
 }
 
 /**

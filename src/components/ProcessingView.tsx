@@ -36,6 +36,10 @@ export default function ProcessingView() {
     completed: number
     total: number
   } | null>(null)
+  const [translateProgress, setTranslateProgress] = useState<{
+    completed: number
+    total: number
+  } | null>(null)
   const startedRef = useRef(false)
 
   // 纯音频模式下，「提取音频」实际是转码为 WAV，文案需相应调整
@@ -47,6 +51,12 @@ export default function ProcessingView() {
     sttProgress && sttProgress.total > 1
       ? `AI 正在识别英文语音（${sttProgress.completed}/${sttProgress.total}）...`
       : 'AI 正在识别英文语音...'
+
+  // 翻译进度文案：多批时显示 "翻译中 3/10..."
+  const translatingDesc =
+    translateProgress && translateProgress.total > 1
+      ? `正在翻译为中文（${translateProgress.completed}/${translateProgress.total}）...`
+      : '正在翻译为中文...'
 
   useEffect(() => {
     if (startedRef.current) return
@@ -73,9 +83,16 @@ export default function ProcessingView() {
 
       // 步骤3: 翻译（未配置 API Key 时后端自动使用内置免费翻译）
       setStage('translating')
+      setTranslateProgress(null)
       try {
         const texts = subs.map((s) => s.textEn)
-        const translations = await callTranslate(apiConfig, texts)
+        const translations = await callTranslate(
+          apiConfig,
+          texts,
+          (completed, total) => {
+            setTranslateProgress({ completed, total })
+          }
+        )
         const translated = subs.map((s, i) => ({
           ...s,
           textZh: translations[i] || '',
@@ -162,7 +179,9 @@ export default function ProcessingView() {
                 ? extractingDesc
                 : stage === 'transcribing'
                   ? transcribingDesc
-                  : STAGE_INFO[stage].desc}
+                  : stage === 'translating'
+                    ? translatingDesc
+                    : STAGE_INFO[stage].desc}
           </p>
         </div>
 
@@ -210,7 +229,9 @@ export default function ProcessingView() {
                         ? extractingDesc
                         : s === 'transcribing'
                           ? transcribingDesc
-                          : STAGE_INFO[s].desc}
+                          : s === 'translating'
+                            ? translatingDesc
+                            : STAGE_INFO[s].desc}
                     </p>
                   </div>
                 </div>
