@@ -32,11 +32,21 @@ export default function ProcessingView() {
 
   const [stage, setStage] = useState<ProcessingStage>('idle')
   const [error, setError] = useState('')
+  const [sttProgress, setSttProgress] = useState<{
+    completed: number
+    total: number
+  } | null>(null)
   const startedRef = useRef(false)
 
   // 纯音频模式下，「提取音频」实际是转码为 WAV，文案需相应调整
   const extractingDesc =
     mediaKind === 'audio' ? '正在转换音频格式...' : '正在从视频中提取音频...'
+
+  // 语音识别进度文案：多块时显示 "识别中 3/20..."
+  const transcribingDesc =
+    sttProgress && sttProgress.total > 1
+      ? `AI 正在识别英文语音（${sttProgress.completed}/${sttProgress.total}）...`
+      : 'AI 正在识别英文语音...'
 
   useEffect(() => {
     if (startedRef.current) return
@@ -54,9 +64,12 @@ export default function ProcessingView() {
         console.log(msg)
       )
 
-      // 步骤2: 语音识别
+      // 步骤2: 语音识别（前端分块逐块发送，避免长音频触发 524 超时）
       setStage('transcribing')
-      const subs = await callSTT(audioWav)
+      setSttProgress(null)
+      const subs = await callSTT(audioWav, (completed, total) => {
+        setSttProgress({ completed, total })
+      })
 
       // 步骤3: 翻译（未配置 API Key 时后端自动使用内置免费翻译）
       setStage('translating')
@@ -147,7 +160,9 @@ export default function ProcessingView() {
               ? error
               : stage === 'extracting'
                 ? extractingDesc
-                : STAGE_INFO[stage].desc}
+                : stage === 'transcribing'
+                  ? transcribingDesc
+                  : STAGE_INFO[stage].desc}
           </p>
         </div>
 
@@ -191,7 +206,11 @@ export default function ProcessingView() {
                       {STAGE_INFO[s].label}
                     </p>
                     <p className="text-xs text-slate-400 truncate">
-                      {s === 'extracting' ? extractingDesc : STAGE_INFO[s].desc}
+                      {s === 'extracting'
+                        ? extractingDesc
+                        : s === 'transcribing'
+                          ? transcribingDesc
+                          : STAGE_INFO[s].desc}
                     </p>
                   </div>
                 </div>
