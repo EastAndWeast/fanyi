@@ -465,6 +465,44 @@ export async function burnSubtitlesToVideo(
 }
 
 /**
+ * 检测录制的视频 Blob 中是否包含有效（非静音）的音频轨道
+ *
+ * 录制阶段通过 WebAudio 捕获音频，但某些浏览器/环境会静默失败
+ * （音频轨道存在但数据全为 0）。此函数解码录制的音频并采样检测，
+ * 判断是否需要走 ffmpeg 混流补救。
+ */
+export async function hasValidAudio(blob: Blob): Promise<boolean> {
+  try {
+    const arrayBuffer = await blob.arrayBuffer()
+    // decodeAudioData 对纯视频文件（无音轨）会抛异常，正好返回 false
+    const audioCtx = new OfflineAudioContext(1, 44100, 44100)
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
+    if (audioBuffer.numberOfChannels === 0) return false
+
+    // 采样检测：取前 3 秒和中间 2 秒，检查是否有非零振幅
+    const channelData = audioBuffer.getChannelData(0)
+    const sampleRate = audioBuffer.sampleRate
+    const checkPoints = [
+      { offset: Math.floor(sampleRate * 0.5), length: Math.floor(sampleRate * 3) },
+      { offset: Math.floor(channelData.length / 2), length: Math.floor(sampleRate * 2) },
+    ]
+
+    for (const { offset, length } of checkPoints) {
+      let maxAmp = 0
+      const end = Math.min(offset + length, channelData.length)
+      // 每隔 100 个样本取一个，快速扫描
+      for (let i = offset; i < end; i += 100) {
+        maxAmp = Math.max(maxAmp, Math.abs(channelData[i]))
+      }
+      if (maxAmp > 0.005) return true // 检测到有效音频
+    }
+    return false // 全部采样点均为静音
+  } catch {
+    return false // 解码失败 = 无音轨
+  }
+}
+
+/**
  * 下载 Blob 文件
  */
 export function downloadBlob(blob: Blob, filename: string) {

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useStore } from '../store'
 import VideoPlayer from './VideoPlayer'
-import { burnSubtitlesToVideo, downloadBlob } from '../lib/subtitleBurner'
+import { burnSubtitlesToVideo, downloadBlob, hasValidAudio } from '../lib/subtitleBurner'
 import { muxOriginalAudio } from '../lib/ffmpeg'
 import { generateSRT, generateVTT, downloadFile } from '../lib/srt'
 
@@ -77,21 +77,28 @@ export default function ExportView() {
         signal: abortControllerRef.current.signal,
       })
 
-      // 用 ffmpeg 将原视频音轨混流进录制结果，保证导出视频有声音
-      // （MediaRecorder 的实时音频捕获可能静默失败，导致导出无音轨）
+      // 检测录制结果是否已包含有效音频
+      // 录制阶段通过 WebAudio 捕获音频，若成功则无需再做 ffmpeg 混流
+      // （ffmpeg 混流需要将原视频载入 wasm，大文件耗时很长）
       let finalBlob = result.blob
-      setStage('muxing')
-      try {
-        finalBlob = await muxOriginalAudio(
-          result.blob,
-          videoFile,
-          result.extension,
-          settings.volume
-        )
-        console.log('[Export] Audio muxed, final size:', finalBlob.size)
-      } catch (muxErr) {
-        // 混流失败时回退到录制结果（可能仍带录制的音轨）
-        console.warn('[Export] 音频混流失败，使用录制原始结果:', muxErr)
+      const audioOk = await hasValidAudio(result.blob)
+      if (audioOk) {
+        console.log('[Export] 录制已含有效音频，跳过混流步骤')
+      } else {
+        console.log('[Export] 录制无有效音频，启动 ffmpeg 混流')
+        setStage('muxing')
+        try {
+          finalBlob = await muxOriginalAudio(
+            result.blob,
+            videoFile,
+            result.extension,
+            settings.volume
+          )
+          console.log('[Export] Audio muxed, final size:', finalBlob.size)
+        } catch (muxErr) {
+          // 混流失败时回退到录制结果（可能仍带录制的音轨）
+          console.warn('[Export] 音频混流失败，使用录制原始结果:', muxErr)
+        }
       }
 
       // 尝试自动下载（桌面浏览器有效，微信等内嵌浏览器无效）
