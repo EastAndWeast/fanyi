@@ -143,6 +143,15 @@ export async function callSTT(
           body: formData,
         })
 
+        // 422 = "未能识别到语音内容"：该块可能为纯音乐/背景音/静音，
+        // 属于正常情况，跳过该块继续后续识别，不中断整个流程
+        if (response.status === 422) {
+          console.warn(`[STT] Chunk ${i + 1}/${chunks.length} returned 422 (no speech detected), skipping`)
+          data = { segments: [] }
+          lastError = null
+          break
+        }
+
         if (!response.ok) {
           const err = await response.json().catch(() => ({}))
           throw new Error(err.error || `语音识别失败 (${response.status})`)
@@ -163,7 +172,7 @@ export async function callSTT(
     if (lastError) throw lastError
     if (!data) throw new Error('语音识别失败')
 
-    // 按块起始时间偏移后合并
+    // 按块起始时间偏移后合并（segments 可能为空——该块无语音）
     const offsetSeconds = (i * CHUNK_BYTES) / 32000
     for (const seg of data.segments) {
       allSegments.push({
@@ -179,7 +188,9 @@ export async function callSTT(
   onProgress?.(chunks.length, chunks.length)
 
   if (allSegments.length === 0) {
-    throw new Error('未能识别到语音内容')
+    throw new Error(
+      '未能识别到语音内容，视频可能为纯音乐/背景音，或语音不清晰'
+    )
   }
 
   return allSegments
