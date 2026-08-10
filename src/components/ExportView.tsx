@@ -4,6 +4,8 @@ import VideoPlayer from './VideoPlayer'
 import { burnSubtitlesToVideo, downloadBlob, hasValidAudio } from '../lib/subtitleBurner'
 import { muxOriginalAudio } from '../lib/ffmpeg'
 import { generateSRT, generateVTT, downloadFile } from '../lib/srt'
+import { synthesizeVoice } from '../lib/tts'
+import { mixVoiceTrack } from '../lib/voiceMixer'
 
 export default function ExportView() {
   const subtitles = useStore((s) => s.subtitles)
@@ -20,6 +22,53 @@ export default function ExportView() {
   const [exportedUrl, setExportedUrl] = useState<string | null>(null)
   const [exportedName, setExportedName] = useState('')
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // 配音相关状态
+  const [voiceOverEnabled, setVoiceOverEnabled] = useState(false)
+  const [voiceSynthesizing, setVoiceSynthesizing] = useState(false)
+  const [voiceProgress, setVoiceProgress] = useState<{
+    completed: number
+    total: number
+  } | null>(null)
+  const [voiceTrack, setVoiceTrack] = useState<AudioBuffer | null>(null)
+  const [voiceError, setVoiceError] = useState('')
+  const [voiceStats, setVoiceStats] = useState<{
+    success: number
+    total: number
+  } | null>(null)
+
+  const handleSynthesizeVoice = async () => {
+    setVoiceSynthesizing(true)
+    setVoiceError('')
+    setVoiceProgress(null)
+    setVoiceTrack(null)
+    setVoiceStats(null)
+    try {
+      const voiceBuffers = await synthesizeVoice(subtitles, (completed, total) => {
+        setVoiceProgress({ completed, total })
+      })
+
+      const successCount = voiceBuffers.filter(Boolean).length
+      setVoiceStats({ success: successCount, total: subtitles.length })
+
+      if (successCount === 0) {
+        throw new Error('所有配音合成失败，免费 TTS 服务可能暂时不可用，请稍后重试')
+      }
+
+      // 估算总时长：字幕最后一条 end + 余量
+      const estimatedDuration =
+        subtitles.length > 0
+          ? subtitles[subtitles.length - 1].end + 3
+          : 60
+
+      const track = await mixVoiceTrack(subtitles, voiceBuffers, estimatedDuration)
+      setVoiceTrack(track)
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : '配音合成失败')
+    } finally {
+      setVoiceSynthesizing(false)
+    }
+  }
 
   const handleExportVideo = async () => {
     if (!videoFile) return
@@ -75,29 +124,31 @@ export default function ExportView() {
         settings,
         onProgress: (p) => setProgress(p),
         signal: abortControllerRef.current.signal,
+        voiceTrack: voiceOverEnabled && voiceTrack ? voiceTrack : undefined,
       })
 
       // 检测录制结果是否已包含有效音频
-      // 录制阶段通过 WebAudio 捕获音频，若成功则无需再做 ffmpeg 混流
-      // （ffmpeg 混流需要将原视频载入 wasm，大文件耗时很长）
+      // 配音模式下不做原音频混流（会覆盖配音）；原声模式下检测并补救
       let finalBlob = result.blob
-      const audioOk = await hasValidAudio(result.blob)
-      if (audioOk) {
-        console.log('[Export] 录制已含有效音频，跳过混流步骤')
-      } else {
-        console.log('[Export] 录制无有效音频，启动 ffmpeg 混流')
-        setStage('muxing')
-        try {
-          finalBlob = await muxOriginalAudio(
-            result.blob,
-            videoFile,
-            result.extension,
-            settings.volume
-          )
-          console.log('[Export] Audio muxed, final size:', finalBlob.size)
-        } catch (muxErr) {
-          // 混流失败时回退到录制结果（可能仍带录制的音轨）
-          console.warn('[Export] 音频混流失败，使用录制原始结果:', muxErr)
+      if (!voiceOverEnabled || !voiceTrack) {
+        const audioOk = await hasValidAudio(result.blob)
+        if (audioOk) {
+          console.log('[Export] 录制已含有效音频，跳过混流步骤')
+        } else {
+          console.log('[Export] 录制无有效音频，启动 ffmpeg 混流')
+          setStage('muxing')
+          try {
+            finalBlob = await muxOriginalAudio(
+              result.blob,
+              videoFile,
+              result.extension,
+              settings.volume
+            )
+            console.log('[Export] Audio muxed, final size:', finalBlob.size)
+          } catch (muxErr) {
+            // 混流失败时回退到录制结果（可能仍带录制的音轨）
+            console.warn('[Export] 音频混流失败，使用录制原始结果:', muxErr)
+          }
         }
       }
 
@@ -174,12 +225,85 @@ export default function ExportView() {
             </p>
           </div>
 
+          {/* 配音设置 */}
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-700">英文配音</span>
+              <button
+                type="button"
+                onClick={() => setVoiceOverEnabled(!voiceOverEnabled)}
+                className={`relative h-6 w-11 rounded-full transition-colors ${
+                  voiceOverEnabled ? 'bg-blue-600' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                    voiceOverEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {voiceOverEnabled && (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400">
+                  使用 AI 将英文字幕合成为语音配音（免费 TTS，可能部分失败）
+                </p>
+
+                {!voiceTrack && !voiceSynthesizing && (
+                  <button
+                    type="button"
+                    onClick={handleSynthesizeVoice}
+                    className="w-full rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 text-sm font-medium transition-colors"
+                  >
+                    合成配音
+                  </button>
+                )}
+
+                {voiceSynthesizing && voiceProgress && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>正在合成配音...</span>
+                      <span>
+                        {voiceProgress.completed}/{voiceProgress.total}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 transition-all"
+                        style={{
+                          width: `${
+                            (voiceProgress.completed / voiceProgress.total) * 100
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {voiceTrack && (
+                  <p className="text-xs text-green-600 font-medium">
+                    ✓ 配音已就绪
+                    {voiceStats
+                      ? `（${voiceStats.success}/${voiceStats.total} 条成功）`
+                      : ''}
+                  </p>
+                )}
+
+                {voiceError && (
+                  <p className="text-xs text-red-500">{voiceError}</p>
+                )}
+              </div>
+            )}
+          </div>
+
           {!exporting && progress === 0 && (
             <button
               onClick={handleExportVideo}
-              className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 text-sm font-medium transition-colors"
+              disabled={voiceOverEnabled && !voiceTrack}
+              className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 text-sm font-medium transition-colors"
             >
-              开始导出
+              {voiceOverEnabled && !voiceTrack ? '请先合成配音' : '开始导出'}
             </button>
           )}
 

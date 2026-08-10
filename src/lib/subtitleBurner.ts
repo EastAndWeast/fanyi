@@ -6,6 +6,8 @@ interface BurnOptions {
   settings: SubtitleSettings
   onProgress?: (progress: number) => void
   signal?: AbortSignal
+  /** TTS 配音音轨（传入则替换原声，undefined 则用原视频音频） */
+  voiceTrack?: AudioBuffer
 }
 
 interface BurnResult {
@@ -177,7 +179,7 @@ function drawSubtitle(
 export async function burnSubtitlesToVideo(
   options: BurnOptions
 ): Promise<BurnResult> {
-  const { video, subtitles, settings, onProgress, signal } = options
+  const { video, subtitles, settings, onProgress, signal, voiceTrack } = options
 
   // 获取视频原始尺寸
   const videoW = video.videoWidth
@@ -289,40 +291,60 @@ export async function burnSubtitlesToVideo(
   }
 
   // ========== 步骤2：捕获音频（播放成功后） ==========
+  // 配音模式（voiceTrack 存在）：用 TTS 合成的配音替换原声
+  // 原声模式（voiceTrack 不存在）：使用原视频音频
   let combinedStream: MediaStream = canvasStream
   try {
     const audioCtx = new AudioContext()
     if (audioCtx.state === 'suspended') {
       await audioCtx.resume()
     }
-    const source = audioCtx.createMediaElementSource(video)
     const dest = audioCtx.createMediaStreamDestination()
     // 音量放大：增益 + 压限器组合
     // 纯增益会削波（超出 [-1,1] 的波形被剪掉），响度提升有限还会破音；
     // 压限器把峰值压回安全范围，让整体响度真正提升
     const gainNode = audioCtx.createGain()
     gainNode.gain.value = settings.volume
-    source.connect(gainNode)
-    // 倍率 > 1 时需要压限器防止削波失真；≤ 1 时直接输出
-    if (settings.volume > 1) {
-      const compressor = audioCtx.createDynamicsCompressor()
-      compressor.threshold.value = -10
-      compressor.knee.value = 6
-      compressor.ratio.value = 6
-      compressor.attack.value = 0.003
-      compressor.release.value = 0.25
-      gainNode.connect(compressor)
-      compressor.connect(dest)
-    } else {
-      gainNode.connect(dest)
+
+    // 连接到 dest（含可选压限器）
+    const connectToDest = (node: AudioNode) => {
+      if (settings.volume > 1) {
+        const compressor = audioCtx.createDynamicsCompressor()
+        compressor.threshold.value = -10
+        compressor.knee.value = 6
+        compressor.ratio.value = 6
+        compressor.attack.value = 0.003
+        compressor.release.value = 0.25
+        node.connect(compressor)
+        compressor.connect(dest)
+      } else {
+        node.connect(dest)
+      }
     }
     // 不连接到 audioCtx.destination，避免声音外放
 
-    // 关键：muted 会让 MediaElementSource 输出静音信号（实测 RMS=0），
-    // 导致录制的音轨是无声数据。音频已被重定向到 WebAudio 且未连接
-    // destination，此处取消静音不会外放，但能让真实音频进入录制流
-    video.muted = false
-    video.volume = 1
+    if (voiceTrack) {
+      // 配音模式：用 TTS 配音替换原声
+      const voiceSource = audioCtx.createBufferSource()
+      voiceSource.buffer = voiceTrack
+      voiceSource.connect(gainNode)
+      connectToDest(gainNode)
+      // 视频保持静音（不播放原声），配音通过 WebAudio 进入录制流
+      video.muted = true
+      voiceSource.start(0)
+      console.log('[Burn] 使用配音音轨替换原声')
+    } else {
+      // 原声模式：使用原视频音频
+      const source = audioCtx.createMediaElementSource(video)
+      source.connect(gainNode)
+      connectToDest(gainNode)
+      // 关键：muted 会让 MediaElementSource 输出静音信号（实测 RMS=0），
+      // 导致录制的音轨是无声数据。音频已被重定向到 WebAudio 且未连接
+      // destination，此处取消静音不会外放，但能让真实音频进入录制流
+      video.muted = false
+      video.volume = 1
+      console.log('[Burn] 使用原视频音频')
+    }
 
     const audioTracks = dest.stream.getAudioTracks()
     if (audioTracks.length > 0) {
