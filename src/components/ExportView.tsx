@@ -14,6 +14,8 @@ export default function ExportView() {
   const mediaKind = useStore((s) => s.mediaKind)
   const setStep = useStore((s) => s.setStep)
   const reset = useStore((s) => s.reset)
+  const ttsConfig = useStore((s) => s.ttsConfig)
+  const updateTtsConfig = useStore((s) => s.updateTtsConfig)
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -36,6 +38,7 @@ export default function ExportView() {
     success: number
     total: number
   } | null>(null)
+  const [showTtsKey, setShowTtsKey] = useState(false)
 
   // 获取媒体文件的实际时长（秒），用于确保配音音轨长度匹配
   const getMediaDuration = (file: File | null): Promise<number> => {
@@ -69,7 +72,7 @@ export default function ExportView() {
     setVoiceTrack(null)
     setVoiceStats(null)
     try {
-      const voiceBuffers = await synthesizeVoice(subtitles, (completed, total) => {
+      const voiceBuffers = await synthesizeVoice(subtitles, ttsConfig, (completed, total) => {
         setVoiceProgress({ completed, total })
       })
 
@@ -277,16 +280,102 @@ export default function ExportView() {
             {voiceOverEnabled && (
               <div className="space-y-2">
                 <p className="text-xs text-slate-400">
-                  使用 AI 将英文字幕合成为语音配音（免费 TTS，可能部分失败）
+                  使用 AI 将英文字幕合成为语音配音
                 </p>
+
+                {/* 引擎选择 */}
+                <div className="space-y-1.5">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateTtsConfig({ engine: 'free' })}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                        ttsConfig.engine === 'free'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      免费（内置）
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateTtsConfig({ engine: 'volcengine' })}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                        ttsConfig.engine === 'volcengine'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      火山引擎
+                    </button>
+                  </div>
+                  {ttsConfig.engine === 'free' && (
+                    <p className="text-xs text-slate-400">
+                      melotts 免费引擎，成功率约 40%，失败片段自动静音
+                    </p>
+                  )}
+                </div>
+
+                {/* 火山引擎配置 */}
+                {ttsConfig.engine === 'volcengine' && (
+                  <div className="space-y-2 rounded-lg bg-slate-50 p-2.5">
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">
+                        Access Token / API Key
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showTtsKey ? 'text' : 'password'}
+                          value={ttsConfig.apiKey}
+                          onChange={(e) => updateTtsConfig({ apiKey: e.target.value })}
+                          placeholder="填入火山引擎密钥"
+                          className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 pr-12 text-xs text-slate-800 outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowTtsKey(!showTtsKey)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          {showTtsKey ? '隐藏' : '显示'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">App ID（选填）</label>
+                      <input
+                        type="text"
+                        value={ttsConfig.appId}
+                        onChange={(e) => updateTtsConfig({ appId: e.target.value })}
+                        placeholder="语音控制台的 App ID"
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">音色 ID（选填）</label>
+                      <input
+                        type="text"
+                        value={ttsConfig.voiceType}
+                        onChange={(e) => updateTtsConfig({ voiceType: e.target.value })}
+                        placeholder="如 zh_female_wanwanxiaohe_moon_bigtts"
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
+                      />
+                      <p className="text-xs text-slate-400">
+                        在控制台开通音色后复制音色 ID，留空使用默认女声
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {!voiceTrack && !voiceSynthesizing && (
                   <button
                     type="button"
                     onClick={handleSynthesizeVoice}
-                    className="w-full rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 text-sm font-medium transition-colors"
+                    disabled={ttsConfig.engine === 'volcengine' && !ttsConfig.apiKey}
+                    className="w-full rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 px-3 py-2 text-sm font-medium transition-colors"
                   >
-                    合成配音
+                    {ttsConfig.engine === 'volcengine' && !ttsConfig.apiKey
+                      ? '请先填写密钥'
+                      : '合成配音'}
                   </button>
                 )}
 

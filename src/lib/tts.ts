@@ -6,7 +6,7 @@
 // 后端单批最多 5 条文本（含重试），前端 3 路并发，
 // 实现参考 api.ts 的 callSTT / callTranslate 并发池模式。
 
-import type { SubtitleSegment } from '../types'
+import type { SubtitleSegment, TtsConfig } from '../types'
 
 // 单批 TTS 最大条数（与后端 tts.ts 的限制对齐）
 const TTS_BATCH_SIZE = 5
@@ -33,13 +33,28 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 }
 
 /**
- * 单批 TTS 请求
+ * 单批 TTS 请求（按引擎类型传递不同参数）
  */
-async function requestTTSBatch(texts: string[]): Promise<TTSBatchResponse> {
+async function requestTTSBatch(
+  texts: string[],
+  config: TtsConfig
+): Promise<TTSBatchResponse> {
+  const payload: Record<string, unknown> = {
+    texts,
+    engine: config.engine,
+  }
+  if (config.engine === 'volcengine') {
+    payload.apiKey = config.apiKey
+    payload.appId = config.appId
+    payload.voiceType = config.voiceType
+  } else {
+    payload.lang = 'en'
+  }
+
   const response = await fetch('/api/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ texts, lang: 'en' }),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
@@ -57,11 +72,13 @@ async function requestTTSBatch(texts: string[]): Promise<TTSBatchResponse> {
  * 合成失败的条目返回 null（时长对齐时做静音处理）。
  *
  * @param subtitles 字幕数组（使用 textEn 作为合成源文本）
+ * @param config TTS 引擎配置（决定使用免费 melotts 还是火山引擎）
  * @param onProgress 进度回调（已完成条数, 总条数）
  * @returns 与 subtitles 等长的 AudioBuffer 数组（失败为 null）
  */
 export async function synthesizeVoice(
   subtitles: SubtitleSegment[],
+  config: TtsConfig,
   onProgress?: (completed: number, total: number) => void
 ): Promise<(AudioBuffer | null)[]> {
   const total = subtitles.length
@@ -99,7 +116,7 @@ export async function synthesizeVoice(
     while (nextBatch < batches.length) {
       const batch = batches[nextBatch++]
       try {
-        const resp = await requestTTSBatch(batch.texts)
+        const resp = await requestTTSBatch(batch.texts, config)
         for (let k = 0; k < resp.results.length; k++) {
           const origIndex = batch.indices[k]
           const item = resp.results[k]

@@ -28,6 +28,20 @@ export interface ApiConfig {
   model: string
 }
 
+// TTS 配音引擎配置
+type TtsEngine = 'free' | 'volcengine'
+
+export interface TtsConfig {
+  // 引擎：'free' = 内置 melotts（免费但不稳定）；'volcengine' = 火山引擎豆包TTS
+  engine: TtsEngine
+  // 火山引擎 API Key / Access Token
+  apiKey: string
+  // 火山引擎 App ID（应用标识，控制台获取）
+  appId: string
+  // 音色 ID（如 'zh_female_wanwanxiaohe_moon_bigtts'）
+  voiceType: string
+}
+
 // 应用步骤
 export type AppStep = 'upload' | 'processing' | 'editor' | 'export'
 
@@ -119,4 +133,12 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   apiKey: '',
   endpoint: API_PRESETS.deepseek.endpoint,
   model: API_PRESETS.deepseek.model,
+}
+
+// 默认 TTS 配置（免费引擎兄底，用户可在导出页切换火山引擎）
+export const DEFAULT_TTS_CONFIG: TtsConfig = {
+  engine: 'free',
+  apiKey: '',
+  appId: '',
+  voiceType: '',
 }
