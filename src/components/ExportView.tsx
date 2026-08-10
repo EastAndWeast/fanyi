@@ -37,6 +37,31 @@ export default function ExportView() {
     total: number
   } | null>(null)
 
+  // 获取媒体文件的实际时长（秒），用于确保配音音轨长度匹配
+  const getMediaDuration = (file: File | null): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      if (!file) {
+        reject(new Error('没有文件'))
+        return
+      }
+      const url = URL.createObjectURL(file)
+      const media = document.createElement(
+        file.type.startsWith('audio/') ? 'audio' : 'video'
+      )
+      media.preload = 'metadata'
+      media.src = url
+      media.onloadedmetadata = () => {
+        URL.revokeObjectURL(url)
+        const d = media.duration
+        resolve(isFinite(d) ? d : 0)
+      }
+      media.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('无法读取媒体时长'))
+      }
+    })
+  }
+
   const handleSynthesizeVoice = async () => {
     setVoiceSynthesizing(true)
     setVoiceError('')
@@ -55,13 +80,18 @@ export default function ExportView() {
         throw new Error('所有配音合成失败，免费 TTS 服务可能暂时不可用，请稍后重试')
       }
 
-      // 估算总时长：字幕最后一条 end + 余量
-      const estimatedDuration =
+      // 获取视频/音频实际时长，确保配音音轨长度匹配
+      const totalDuration = await getMediaDuration(videoFile).catch(() => 0)
+      // 回退：字幕最后一条 end + 余量
+      const fallbackDuration =
         subtitles.length > 0
           ? subtitles[subtitles.length - 1].end + 3
           : 60
-
-      const track = await mixVoiceTrack(subtitles, voiceBuffers, estimatedDuration)
+      const track = await mixVoiceTrack(
+        subtitles,
+        voiceBuffers,
+        totalDuration > 0 ? totalDuration : fallbackDuration
+      )
       setVoiceTrack(track)
     } catch (err) {
       setVoiceError(err instanceof Error ? err.message : '配音合成失败')
