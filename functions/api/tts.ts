@@ -6,6 +6,19 @@ interface Env {
   AI: Ai
 }
 
+/**
+ * 将 base64 字符串解码为 Uint8Array
+ * Workers AI TTS 模型可能返回 { audio: "<base64>" } 格式
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
 interface TTSRequest {
   text: string
   lang?: string
@@ -35,10 +48,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       lang,
     })) as unknown
 
-    // melotts 返回 Response 对象（含 MP3 二进制 body）
-    if (result instanceof Response) {
-      const audioBuffer = await result.arrayBuffer()
-      return new Response(audioBuffer, {
+    // melotts 返回值类型（AiTextToSpeechOutput）有两种可能：
+    // 1. Uint8Array —— 直接是 MP3 二进制
+    // 2. { audio: string } —— base64 编码的 MP3
+    let audioBytes: Uint8Array | null = null
+
+    if (result instanceof Uint8Array) {
+      audioBytes = result
+    } else if (
+      result &&
+      typeof result === 'object' &&
+      typeof (result as { audio?: unknown }).audio === 'string'
+    ) {
+      // { audio: "<base64>" } 格式：解码 base64
+      audioBytes = base64ToUint8Array((result as { audio: string }).audio)
+    } else if (result instanceof Response) {
+      // 兜底：部分版本可能返回 Response 对象
+      audioBytes = new Uint8Array(await result.arrayBuffer())
+    }
+
+    if (audioBytes && audioBytes.byteLength > 0) {
+      return new Response(audioBytes.buffer as ArrayBuffer, {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Cache-Control': 'no-cache',
@@ -46,21 +76,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       })
     }
 
-    // 兜底：部分版本可能直接返回 ArrayBuffer 或 Uint8Array
-    if (result instanceof ArrayBuffer) {
-      return new Response(result, {
-        headers: { 'Content-Type': 'audio/mpeg' },
-      })
-    }
-
-    if (result instanceof Uint8Array) {
-      return new Response(result as unknown as BufferSource, {
-        headers: { 'Content-Type': 'audio/mpeg' },
-      })
-    }
-
     // 返回格式不在预期内
-    console.error('[TTS] Unexpected result type:', typeof result, result)
+    console.error('[TTS] Unexpected result type:', typeof result)
     return Response.json(
       { error: 'TTS 返回格式异常，请稍后重试' },
       { status: 500 }
