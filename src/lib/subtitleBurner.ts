@@ -81,10 +81,10 @@ function drawSubtitle(
   // 计算所有需要绘制的文本行
   const lines: { text: string; color: string; size: number }[] = []
   for (const sub of currentSubs) {
-    if (settings.showZh && sub.textZh) {
+    if (settings.showOriginal && sub.textOriginal) {
       lines.push({
-        text: sub.textZh,
-        color: settings.zhColor,
+        text: sub.textOriginal,
+        color: settings.originalColor,
         size: fontSize,
       })
     }

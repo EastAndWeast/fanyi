@@ -4,10 +4,12 @@ import type {
   SubtitleSettings,
   ApiConfig,
   AppStep,
+  SourceLanguage,
 } from './types'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_API_CONFIG,
+  DEFAULT_SOURCE_LANGUAGE,
 } from './types'
 
 interface AppState {
@@ -31,6 +33,9 @@ interface AppState {
   // API配置
   apiConfig: ApiConfig
 
+  // 源语言（视频/音频说的语言，用于语音识别；'auto' 为自动检测）
+  sourceLanguage: SourceLanguage
+
   // Actions
   setStep: (step: AppStep) => void
   setVideo: (file: File) => void
@@ -40,6 +45,7 @@ interface AppState {
   setActiveSubtitle: (id: number | null) => void
   updateSettings: (patch: Partial<SubtitleSettings>) => void
   updateApiConfig: (patch: Partial<ApiConfig>) => void
+  setSourceLanguage: (lang: SourceLanguage) => void
   reset: () => void
 }
 
@@ -75,25 +81,31 @@ const STORAGE_KEY = 'vst-state'
 function loadPersisted(): {
   settings: SubtitleSettings
   apiConfig: ApiConfig
+  sourceLanguage: SourceLanguage
 } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { settings: DEFAULT_SETTINGS, apiConfig: DEFAULT_API_CONFIG }
+    if (!raw) return { settings: DEFAULT_SETTINGS, apiConfig: DEFAULT_API_CONFIG, sourceLanguage: DEFAULT_SOURCE_LANGUAGE }
     const parsed = JSON.parse(raw)
     return {
       settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
       apiConfig: { ...DEFAULT_API_CONFIG, ...parsed.apiConfig },
+      sourceLanguage: parsed.sourceLanguage ?? DEFAULT_SOURCE_LANGUAGE,
     }
   } catch {
-    return { settings: DEFAULT_SETTINGS, apiConfig: DEFAULT_API_CONFIG }
+    return { settings: DEFAULT_SETTINGS, apiConfig: DEFAULT_API_CONFIG, sourceLanguage: DEFAULT_SOURCE_LANGUAGE }
   }
 }
 
-function persist(settings: SubtitleSettings, apiConfig: ApiConfig) {
+function persist(
+  settings: SubtitleSettings,
+  apiConfig: ApiConfig,
+  sourceLanguage: SourceLanguage
+) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ settings, apiConfig })
+      JSON.stringify({ settings, apiConfig, sourceLanguage })
     )
   } catch {
     // ignore
@@ -112,6 +124,7 @@ export const useStore = create<AppState>((set) => ({
   activeSubtitleId: null,
   settings: initial.settings,
   apiConfig: initial.apiConfig,
+  sourceLanguage: initial.sourceLanguage,
 
   setStep: (step) => set({ step }),
 
@@ -140,15 +153,21 @@ export const useStore = create<AppState>((set) => ({
   updateSettings: (patch) =>
     set((state) => {
       const settings = { ...state.settings, ...patch }
-      persist(settings, state.apiConfig)
+      persist(settings, state.apiConfig, state.sourceLanguage)
       return { settings }
     }),
 
   updateApiConfig: (patch) =>
     set((state) => {
       const apiConfig = { ...state.apiConfig, ...patch }
-      persist(state.settings, apiConfig)
+      persist(state.settings, apiConfig, state.sourceLanguage)
       return { apiConfig }
+    }),
+
+  setSourceLanguage: (lang) =>
+    set((state) => {
+      persist(state.settings, state.apiConfig, lang)
+      return { sourceLanguage: lang }
     }),
 
   reset: () =>

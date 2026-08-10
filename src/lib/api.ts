@@ -1,4 +1,4 @@
-import type { SubtitleSegment, ApiConfig } from '../types'
+import type { SubtitleSegment, ApiConfig, SourceLanguage } from '../types'
 
 interface STTResponse {
   segments: { start: number; end: number; text: string }[]
@@ -117,7 +117,8 @@ function sliceWav(buffer: ArrayBuffer): ArrayBuffer[] {
 async function processSTTChunk(
   chunk: ArrayBuffer,
   chunkIndex: number,
-  totalChunks: number
+  totalChunks: number,
+  language: SourceLanguage
 ): Promise<STTResponse> {
   let lastError: Error | null = null
 
@@ -126,6 +127,9 @@ async function processSTTChunk(
       const formData = new FormData()
       const blob = new Blob([chunk], { type: 'audio/wav' })
       formData.append('audio', blob, 'audio.wav')
+      if (language !== 'auto') {
+        formData.append('language', language)
+      }
 
       const response = await fetch('/api/stt', {
         method: 'POST',
@@ -163,11 +167,13 @@ async function processSTTChunk(
  * 避免长音频在后端串行处理时触发 Cloudflare 524 超时。
  *
  * @param audioWav WAV 格式的 ArrayBuffer（16kHz 单声道 16-bit）
+ * @param language 源语言（'auto' 为自动检测）
  * @param onProgress 进度回调（已完成块数, 总块数）
- * @returns 字幕片段数组（仅英文，textZh 为空）
+ * @returns 字幕片段数组（仅原文，textEn 为空）
  */
 export async function callSTT(
   audioWav: ArrayBuffer,
+  language: SourceLanguage,
   onProgress?: (completed: number, total: number) => void
 ): Promise<SubtitleSegment[]> {
   const chunks = sliceWav(audioWav)
@@ -182,7 +188,7 @@ export async function callSTT(
   async function worker() {
     while (nextIndex < total) {
       const i = nextIndex++
-      results[i] = await processSTTChunk(chunks[i], i, total)
+      results[i] = await processSTTChunk(chunks[i], i, total, language)
       completed++
       onProgress?.(completed, total)
     }
@@ -205,8 +211,8 @@ export async function callSTT(
         id: segId++,
         start: seg.start + offsetSeconds,
         end: seg.end + offsetSeconds,
-        textEn: seg.text,
-        textZh: '',
+        textOriginal: seg.text,
+        textEn: '',
       })
     }
   }
@@ -248,9 +254,9 @@ const TRANSLATE_CONCURRENCY = 3
  * 每批含自动重试（应对偶发的 Cloudflare 524 超时），TRANSLATE_CONCURRENCY 路并发发送。
  *
  * @param config API 配置
- * @param texts 待翻译的英文字幕文本数组
+ * @param texts 待翻译的原文字幕文本数组
  * @param onProgress 进度回调（已完成批数, 总批数）
- * @returns 中文翻译数组
+ * @returns 英文翻译数组
  */
 export async function callTranslate(
   config: ApiConfig,
@@ -347,7 +353,7 @@ async function callTranslateBatchWithRetry(
  */
 export async function testApiConnection(config: ApiConfig): Promise<string> {
   const translations = await callTranslate(config, [
-    'Hello, this is a connection test.',
+    '你好，这是一个连接测试。',
   ])
   const result = translations[0]?.trim()
   if (!result) {

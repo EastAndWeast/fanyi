@@ -4,15 +4,15 @@ export interface SubtitleSegment {
   start: number // 秒
   end: number // 秒
   textEn: string
-  textZh: string
+  textOriginal: string // 原文（源语言识别结果）
 }
 
 // 字幕样式设置
 export interface SubtitleSettings {
   showEn: boolean
-  showZh: boolean
+  showOriginal: boolean
   enColor: string
-  zhColor: string
+  originalColor: string
   positionY: number // 字幕垂直位置：距顶部百分比 0-100
   fontSize: number
   background: boolean
@@ -62,12 +62,50 @@ export const API_PRESETS: Record<
   },
 }
 
+// 源语言选项：'auto' 为自动检测（Whisper 不传 language 参数），其余为常见语种
+export type SourceLanguage =
+  | 'auto'
+  | 'en'
+  | 'zh'
+  | 'ja'
+  | 'ko'
+  | 'fr'
+  | 'de'
+  | 'es'
+  | 'it'
+  | 'pt'
+  | 'ru'
+  | 'ar'
+  | 'hi'
+  | 'th'
+  | 'vi'
+
+export const SOURCE_LANGUAGES: { value: SourceLanguage; label: string }[] = [
+  { value: 'auto', label: '自动检测' },
+  { value: 'ja', label: '日语' },
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: '英语' },
+  { value: 'ko', label: '韩语' },
+  { value: 'fr', label: '法语' },
+  { value: 'de', label: '德语' },
+  { value: 'es', label: '西班牙语' },
+  { value: 'it', label: '意大利语' },
+  { value: 'pt', label: '葡萄牙语' },
+  { value: 'ru', label: '俄语' },
+  { value: 'ar', label: '阿拉伯语' },
+  { value: 'hi', label: '印地语' },
+  { value: 'th', label: '泰语' },
+  { value: 'vi', label: '越南语' },
+]
+
+export const DEFAULT_SOURCE_LANGUAGE: SourceLanguage = 'auto'
+
 // 默认样式
 export const DEFAULT_SETTINGS: SubtitleSettings = {
   showEn: true,
-  showZh: true,
+  showOriginal: true,
   enColor: '#ffffff',
-  zhColor: '#ffd700',
+  originalColor: '#ffd700',
   positionY: 67, // 默认位于画面下方约 1/3 处
   fontSize: 24,
   background: true,

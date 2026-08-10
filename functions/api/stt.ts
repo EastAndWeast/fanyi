@@ -240,6 +240,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const formData = await request.formData()
     const audioFile = formData.get('audio') as File | null
+    // 源语言：'auto' 为自动检测（不传 language 参数给 Whisper），其余为具体语种
+    const language = (formData.get('language') as string) || 'auto'
 
     if (!audioFile) {
       return Response.json({ error: '未找到音频文件' }, { status: 400 })
@@ -270,12 +272,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         words?: WhisperWord[]
       }
       try {
-        // workers-types 的 whisper 类型未声明 language 字段，但运行时需要它
-        // （不传 language 在多语言音频时会报 3010），用类型断言绕过
-        result = await env.AI.run('@cf/openai/whisper', {
+        // 源语言处理：'auto' 时不传 language（Whisper 自动检测），否则强制指定语种
+        // workers-types 的 whisper 类型未声明 language 字段，用类型断言绕过
+        const whisperParams: { audio: number[]; language?: string } = {
           audio: audioBytes,
-          language: 'en',
-        } as { audio: number[] }) as {
+        }
+        if (language && language !== 'auto') {
+          whisperParams.language = language
+        }
+        result = await env.AI.run('@cf/openai/whisper', whisperParams as { audio: number[] }) as {
           text?: string
           vtt?: string
           word_count?: number

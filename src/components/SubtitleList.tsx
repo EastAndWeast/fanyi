@@ -29,8 +29,8 @@ export default function SubtitleList() {
     updateSubtitle(id, { textEn: value })
   }
 
-  const handleZhChange = (id: number, value: string) => {
-    updateSubtitle(id, { textZh: value })
+  const handleOriginalChange = (id: number, value: string) => {
+    updateSubtitle(id, { textOriginal: value })
   }
 
   const handleFocus = (sub: SubtitleSegment) => {
@@ -78,14 +78,14 @@ export default function SubtitleList() {
             placeholder="英文字幕"
           />
 
-          {/* 中文字幕 */}
+          {/* 原文字幕 */}
           <input
             type="text"
-            value={sub.textZh}
-            onChange={(e) => handleZhChange(sub.id, e.target.value)}
+            value={sub.textOriginal}
+            onChange={(e) => handleOriginalChange(sub.id, e.target.value)}
             onFocus={() => handleFocus(sub)}
             className="w-full bg-transparent text-sm text-amber-700 outline-none placeholder:text-slate-400"
-            placeholder="中文字幕"
+            placeholder="原文字幕"
           />
         </div>
       ))}

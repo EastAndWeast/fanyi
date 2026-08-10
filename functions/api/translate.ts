@@ -15,7 +15,7 @@ interface TranslateRequest {
 
 // 内置免费翻译使用的 Workers AI 模型
 // 注意：llama-3.1-8b-instruct 已于 2026-05-30 被弃用（错误码 5028），
-// GLM 是官方推荐替代品，且中文原生，英译中质量更好
+// GLM 是官方推荐替代品，多语言支持好，翻译为英文质量稳定
 const BUILTIN_MODEL = '@cf/zai-org/glm-4.7-flash'
 
 // 内置额度用尽时的提示文案
@@ -31,12 +31,12 @@ function normalizeEndpoint(endpoint: string): string {
   return url
 }
 
-const SYSTEM_PROMPT = `你是一个专业的英译中翻译助手。请将以下英文文本翻译为简体中文。
-每一行格式为 [序号] 英文文本。
-请保持序号不变，只翻译英文内容为简体中文。
-输出格式必须是JSON数组，如：["翻译1", "翻译2", ...]
+const SYSTEM_PROMPT = `你是一个专业的翻译助手。请将以下文本翻译为英文。
+每一行格式为 [序号] 原文文本（可能是日语、中文、韩语、法语等各种语言）。
+请保持序号不变，将每行内容翻译为英文。
+输出格式必须是JSON数组，如：["Translation 1", "Translation 2", ...]
 只输出JSON数组，不要添加任何其他文字、markdown标记或解释。
-保持翻译简洁自然，适合字幕显示。`
+保持翻译简洁自然，适合字幕显示。如果原文已经是英文，请原样输出。`
 
 // 解析模型返回的翻译内容，容错 markdown 代码块和非 JSON 格式
 function parseTranslations(content: string, texts: string[]): string[] {

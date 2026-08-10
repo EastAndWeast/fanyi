@@ -10,8 +10,8 @@ const STAGE_INFO: Record<
 > = {
   idle: { label: '准备中', desc: '' },
   extracting: { label: '提取音频', desc: '正在从视频中提取音频...' },
-  transcribing: { label: '语音识别', desc: 'AI 正在识别英文语音...' },
-  translating: { label: '翻译', desc: '正在翻译为中文...' },
+  transcribing: { label: '语音识别', desc: 'AI 正在识别语音...' },
+  translating: { label: '翻译', desc: '正在翻译为英文...' },
   done: { label: '完成', desc: '处理完成！' },
   error: { label: '错误', desc: '处理失败' },
 }
@@ -26,6 +26,7 @@ export default function ProcessingView() {
   const videoFile = useStore((s) => s.videoFile)
   const mediaKind = useStore((s) => s.mediaKind)
   const apiConfig = useStore((s) => s.apiConfig)
+  const sourceLanguage = useStore((s) => s.sourceLanguage)
   const setSubtitles = useStore((s) => s.setSubtitles)
   const setStep = useStore((s) => s.setStep)
   const clearVideo = useStore((s) => s.clearVideo)
@@ -49,14 +50,14 @@ export default function ProcessingView() {
   // 语音识别进度文案：多块时显示 "识别中 3/20..."
   const transcribingDesc =
     sttProgress && sttProgress.total > 1
-      ? `AI 正在识别英文语音（${sttProgress.completed}/${sttProgress.total}）...`
-      : 'AI 正在识别英文语音...'
+      ? `AI 正在识别语音（${sttProgress.completed}/${sttProgress.total}）...`
+      : 'AI 正在识别语音...'
 
   // 翻译进度文案：多批时显示 "翻译中 3/10..."
   const translatingDesc =
     translateProgress && translateProgress.total > 1
-      ? `正在翻译为中文（${translateProgress.completed}/${translateProgress.total}）...`
-      : '正在翻译为中文...'
+      ? `正在翻译为英文（${translateProgress.completed}/${translateProgress.total}）...`
+      : '正在翻译为英文...'
 
   useEffect(() => {
     if (startedRef.current) return
@@ -77,7 +78,7 @@ export default function ProcessingView() {
       // 步骤2: 语音识别（前端分块逐块发送，避免长音频触发 524 超时）
       setStage('transcribing')
       setSttProgress(null)
-      const subs = await callSTT(audioWav, (completed, total) => {
+      const subs = await callSTT(audioWav, sourceLanguage, (completed, total) => {
         setSttProgress({ completed, total })
       })
 
@@ -85,7 +86,7 @@ export default function ProcessingView() {
       setStage('translating')
       setTranslateProgress(null)
       try {
-        const texts = subs.map((s) => s.textEn)
+        const texts = subs.map((s) => s.textOriginal)
         const translations = await callTranslate(
           apiConfig,
           texts,
@@ -95,7 +96,7 @@ export default function ProcessingView() {
         )
         const translated = subs.map((s, i) => ({
           ...s,
-          textZh: translations[i] || '',
+          textEn: translations[i] || '',
         }))
         setSubtitles(translated)
       } catch (translateErr) {
@@ -244,7 +245,7 @@ export default function ProcessingView() {
         {error && stage !== 'error' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-600">
             <p className="font-semibold mb-1">翻译失败</p>
-            <p>{error}。英文字幕已保留，你可以在编辑界面手动填写或稍后重试。</p>
+            <p>{error}。原文字幕已保留，你可以在编辑界面手动填写或稍后重试。</p>
           </div>
         )}
 

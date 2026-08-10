@@ -128,13 +128,13 @@ export default function ExportView() {
     abortControllerRef.current?.abort()
   }
 
-  const handleDownloadSRT = (lang: 'en' | 'zh' | 'both') => {
+  const handleDownloadSRT = (lang: 'en' | 'original' | 'both') => {
     const baseName = videoFile?.name.replace(/\.[^.]+$/, '') || 'subtitles'
     const suffix = lang === 'both' ? '' : `_${lang}`
     downloadFile(generateSRT(subtitles, lang), `${baseName}${suffix}.srt`)
   }
 
-  const handleDownloadVTT = (lang: 'en' | 'zh' | 'both') => {
+  const handleDownloadVTT = (lang: 'en' | 'original' | 'both') => {
     const baseName = videoFile?.name.replace(/\.[^.]+$/, '') || 'subtitles'
     const suffix = lang === 'both' ? '' : `_${lang}`
     downloadFile(generateVTT(subtitles, lang), `${baseName}${suffix}.vtt`)
@@ -286,10 +286,10 @@ export default function ExportView() {
                 英文
               </button>
               <button
-                onClick={() => handleDownloadSRT('zh')}
+                onClick={() => handleDownloadSRT('original')}
                 className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
-                中文
+                原文
               </button>
             </div>
           </div>
@@ -311,10 +311,10 @@ export default function ExportView() {
                 英文
               </button>
               <button
-                onClick={() => handleDownloadVTT('zh')}
+                onClick={() => handleDownloadVTT('original')}
                 className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
-                中文
+                原文
               </button>
             </div>
           </div>
@@ -334,7 +334,7 @@ export default function ExportView() {
             </div>
             <div className="rounded-lg bg-slate-100 p-2">
               <p className="text-lg font-bold text-slate-800">
-                {subtitles.filter((s) => s.textZh).length}
+                {subtitles.filter((s) => s.textOriginal).length}
               </p>
               <p className="text-xs text-slate-400">已翻译</p>
             </div>

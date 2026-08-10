@@ -28,10 +28,10 @@ export default function EditorView() {
     setRetranslating(true)
     setTranslateError('')
     try {
-      const texts = subtitles.map((s) => s.textEn)
+      const texts = subtitles.map((s) => s.textOriginal)
       const translations = await callTranslate(apiConfig, texts)
       setSubtitles(
-        subtitles.map((s, i) => ({ ...s, textZh: translations[i] || '' }))
+        subtitles.map((s, i) => ({ ...s, textEn: translations[i] || '' }))
       )
     } catch (err) {
       setTranslateError(

@@ -21,14 +21,14 @@ export default function StyleSettings() {
             英文
           </button>
           <button
-            onClick={() => updateSettings({ showZh: !settings.showZh })}
+            onClick={() => updateSettings({ showOriginal: !settings.showOriginal })}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              settings.showZh
+              settings.showOriginal
                 ? 'bg-blue-600 text-white'
                 : 'bg-slate-100 text-slate-500'
             }`}
           >
-            中文
+            原文
           </button>
         </div>
       </div>
@@ -45,13 +45,13 @@ export default function StyleSettings() {
             />
           </div>
         )}
-        {settings.showZh && (
+        {settings.showOriginal && (
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-700">中文颜色</span>
+            <span className="text-sm text-slate-700">原文颜色</span>
             <input
               type="color"
-              value={settings.zhColor}
-              onChange={(e) => updateSettings({ zhColor: e.target.value })}
+              value={settings.originalColor}
+              onChange={(e) => updateSettings({ originalColor: e.target.value })}
             />
           </div>
         )}

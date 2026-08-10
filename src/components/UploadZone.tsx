@@ -2,12 +2,14 @@ import { useRef, useState } from 'react'
 import { useStore, isMediaFile } from '../store'
 import { getFFmpegMode } from '../lib/ffmpeg'
 import ApiKeySettings from './ApiKeySettings'
-import { API_PRESETS } from '../types'
+import { API_PRESETS, SOURCE_LANGUAGES } from '../types'
 
 export default function UploadZone() {
   const setVideo = useStore((s) => s.setVideo)
   const setStep = useStore((s) => s.setStep)
   const apiConfig = useStore((s) => s.apiConfig)
+  const sourceLanguage = useStore((s) => s.sourceLanguage)
+  const setSourceLanguage = useStore((s) => s.setSourceLanguage)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   // 默认收起：内置免费翻译开箱即用，无需引导用户展开配置
@@ -110,6 +112,27 @@ export default function UploadZone() {
           </div>
         )}
 
+        {/* 源语言选择 */}
+        <div className="flex items-center gap-3 rounded-lg bg-white border border-slate-200 px-4 py-3">
+          <label className="text-sm font-medium text-slate-700 flex-shrink-0">
+            视频语言
+          </label>
+          <select
+            value={sourceLanguage}
+            onChange={(e) => setSourceLanguage(e.target.value as typeof sourceLanguage)}
+            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-blue-500"
+          >
+            {SOURCE_LANGUAGES.map((lang) => (
+              <option key={lang.value} value={lang.value}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-400 flex-shrink-0 hidden sm:block">
+            默认自动检测，识别不准时可手动指定
+          </p>
+        </div>
+
         {/* 上传区域 */}
         <div
           onDragOver={(e) => {
@@ -169,12 +192,12 @@ export default function UploadZone() {
             {
               icon: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3',
               title: '自动识别',
-              desc: 'AI 自动提取英文字幕',
+              desc: 'AI 自动识别语音字幕',
             },
             {
               icon: 'M3 5h12 M9 3v2 M14 17h-4l4-7 M5 21l4-7',
               title: 'AI 翻译',
-              desc: '自动翻译为中文',
+              desc: '翻译为英文',
             },
             {
               icon: 'M12 2v20 M2 5h20 M2 12h20 M2 19h20',

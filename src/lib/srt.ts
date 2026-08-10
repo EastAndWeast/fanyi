@@ -29,7 +29,7 @@ function formatVTTTime(seconds: number): string {
  */
 export function generateSRT(
   subtitles: SubtitleSegment[],
-  lang: 'en' | 'zh' | 'both' = 'both'
+  lang: 'en' | 'original' | 'both' = 'both'
 ): string {
   return subtitles
     .map((sub, index) => {
@@ -37,8 +37,8 @@ export function generateSRT(
       if (lang === 'en' || lang === 'both') {
         if (sub.textEn) texts.push(sub.textEn)
       }
-      if (lang === 'zh' || lang === 'both') {
-        if (sub.textZh) texts.push(sub.textZh)
+      if (lang === 'original' || lang === 'both') {
+        if (sub.textOriginal) texts.push(sub.textOriginal)
       }
 
       if (texts.length === 0) return ''
@@ -54,7 +54,7 @@ export function generateSRT(
  */
 export function generateVTT(
   subtitles: SubtitleSegment[],
-  lang: 'en' | 'zh' | 'both' = 'both'
+  lang: 'en' | 'original' | 'both' = 'both'
 ): string {
   const body = subtitles
     .map((sub) => {
@@ -62,8 +62,8 @@ export function generateVTT(
       if (lang === 'en' || lang === 'both') {
         if (sub.textEn) texts.push(sub.textEn)
       }
-      if (lang === 'zh' || lang === 'both') {
-        if (sub.textZh) texts.push(sub.textZh)
+      if (lang === 'original' || lang === 'both') {
+        if (sub.textOriginal) texts.push(sub.textOriginal)
       }
 
       if (texts.length === 0) return ''
