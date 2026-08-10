@@ -2,18 +2,22 @@ import { useRef, useState } from 'react'
 import { useStore, isMediaFile } from '../store'
 import { getFFmpegMode } from '../lib/ffmpeg'
 import ApiKeySettings from './ApiKeySettings'
+import TtsSettings from './TtsSettings'
 import { API_PRESETS, SOURCE_LANGUAGES } from '../types'
 
 export default function UploadZone() {
   const setVideo = useStore((s) => s.setVideo)
   const setStep = useStore((s) => s.setStep)
   const apiConfig = useStore((s) => s.apiConfig)
+  const ttsConfig = useStore((s) => s.ttsConfig)
   const sourceLanguage = useStore((s) => s.sourceLanguage)
   const setSourceLanguage = useStore((s) => s.setSourceLanguage)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   // 默认收起：内置免费翻译开箱即用，无需引导用户展开配置
   const [showApiSettings, setShowApiSettings] = useState(false)
+  // TTS 配置默认收起，用户按需展开
+  const [showTtsSettings, setShowTtsSettings] = useState(false)
 
   const ffmpegMode = getFFmpegMode()
   const hasApiKey = Boolean(apiConfig.apiKey.trim())
@@ -111,6 +115,64 @@ export default function UploadZone() {
             未配置时默认使用内置免费翻译（每日限额，先到先得）；额度用完后可配置自己的 API Key 继续翻译。
           </div>
         )}
+
+        {/* 配音 TTS 配置 */}
+        <div
+          className={`rounded-xl border overflow-hidden ${
+            ttsConfig.engine === 'volcengine' && ttsConfig.apiKey
+              ? 'border-green-200 bg-green-50'
+              : 'border-slate-200 bg-white'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setShowTtsSettings((value) => !value)}
+            aria-expanded={showTtsSettings}
+            className="w-full flex items-center justify-between gap-4 p-4 text-left"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    ttsConfig.engine === 'volcengine' && ttsConfig.apiKey
+                      ? 'bg-green-500'
+                      : 'bg-slate-400'
+                  }`}
+                />
+                <p
+                  className={`text-sm font-semibold ${
+                    ttsConfig.engine === 'volcengine' && ttsConfig.apiKey
+                      ? 'text-green-600'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  配音 TTS{' '}
+                  {ttsConfig.engine === 'volcengine' && ttsConfig.apiKey
+                    ? '已配置'
+                    : ttsConfig.engine === 'free'
+                      ? '使用免费引擎'
+                      : '未配置密钥'}
+                </p>
+              </div>
+              <p className="text-xs text-slate-500 mt-1 ml-4 truncate">
+                {ttsConfig.engine === 'free'
+                  ? '内置 melotts 免费引擎（成功率约40%）'
+                  : ttsConfig.apiKey
+                    ? `火山引擎 · ${ttsConfig.voiceType || '默认女声'}`
+                    : '选填，配置火山引擎可获得稳定的高质量配音'}
+              </p>
+            </div>
+            <span className="flex-shrink-0 text-xs text-blue-600">
+              {showTtsSettings ? '收起' : '配置'}
+            </span>
+          </button>
+
+          {showTtsSettings && (
+            <div className="border-t border-slate-200 p-4">
+              <TtsSettings />
+            </div>
+          )}
+        </div>
 
         {/* 源语言选择 */}
         <div className="flex items-center gap-3 rounded-lg bg-white border border-slate-200 px-4 py-3">
