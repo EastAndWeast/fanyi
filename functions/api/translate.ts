@@ -77,29 +77,86 @@ function isQuotaError(message: string): boolean {
   return /quota|limit|exceed|capacity|rate|429|3040/i.test(message)
 }
 
+// 单次调用 Workers AI 翻译（返回原始 translations，可能含空条目）
+async function runBuiltinAI(env: Env, numberedTexts: string, count: number): Promise<string[]> {
+  // 新模型可能返回 OpenAI 兼容格式（choices）或老式格式（response）
+  const result = (await env.AI.run(BUILTIN_MODEL as Parameters<Ai['run']>[0], {
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: numberedTexts },
+    ],
+    temperature: 0.3,
+    max_tokens: 4096,
+  })) as {
+    response?: string
+    choices?: { message?: { content?: string } }[]
+  }
+
+  const content =
+    result.response ?? result.choices?.[0]?.message?.content ?? ''
+  if (!content) {
+    // 模型偶发返回空内容（实测约 4% 概率），让调用方按空翻译处理并触发补翻
+    console.warn('[Translate] Builtin AI returned empty content')
+    return new Array(count).fill('')
+  }
+  return parseTranslations(content, new Array(count).fill(''))
+}
+
+// 找出翻译结果中的空条目索引
+function emptyIndexesOf(translations: string[]): number[] {
+  return translations
+    .map((t, i) => (!t || !t.trim() ? i : -1))
+    .filter((i) => i >= 0)
+}
+
+/**
+ * 补翻空条目：GLM 偶发漏翻个别条目（实测约 4.6%，常见于批次最后一条或整批异常），
+ * 把空条目拆成更小批次重新翻译，最多 2 轮，大幅降低"部分字幕没翻译"的概率。
+ */
+async function fillEmptyTranslations(
+  runBatch: (texts: string[], numberedTexts: string) => Promise<string[]>,
+  texts: string[],
+  translations: string[],
+  maxRounds = 2
+): Promise<string[]> {
+  const current = [...translations]
+  for (let round = 0; round < maxRounds; round++) {
+    const empties = emptyIndexesOf(current)
+    if (empties.length === 0) break
+
+    // 每小批最多 5 条，减少单次输出被再次漏翻的概率
+    const SUB_BATCH = 5
+    for (let start = 0; start < empties.length; start += SUB_BATCH) {
+      const idxs = empties.slice(start, start + SUB_BATCH)
+      const subTexts = idxs.map((i) => texts[i])
+      const numbered = subTexts.map((t, i) => `[${i}] ${t}`).join('\n')
+      try {
+        const subResults = await runBatch(subTexts, numbered)
+        idxs.forEach((globalIdx, j) => {
+          const t = subResults[j]
+          if (t && t.trim()) current[globalIdx] = t
+        })
+        console.log(
+          `[Translate] Refill round ${round + 1}: ${idxs.length} empty -> ${idxs.filter((g, j) => subResults[j]?.trim()).length} filled`
+        )
+      } catch (err) {
+        // 补翻失败不影响主流程，保留空条目
+        console.error('[Translate] Refill batch failed:', err)
+      }
+    }
+  }
+  return current
+}
+
 // 内置免费翻译：调用 Workers AI，无需用户提供 Key
 async function translateWithBuiltinAI(
   env: Env,
   texts: string[],
   numberedTexts: string
 ): Promise<Response> {
-  // 新模型可能返回 OpenAI 兼容格式（choices）或老式格式（response）
-  let result: {
-    response?: string
-    choices?: { message?: { content?: string } }[]
-  }
+  let translations: string[]
   try {
-    result = (await env.AI.run(BUILTIN_MODEL as Parameters<Ai['run']>[0], {
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: numberedTexts },
-      ],
-      temperature: 0.3,
-      max_tokens: 4096,
-    })) as {
-      response?: string
-      choices?: { message?: { content?: string } }[]
-    }
+    translations = await runBuiltinAI(env, numberedTexts, texts.length)
   } catch (aiError) {
     const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
     console.error('[Translate] Workers AI error:', errMsg)
@@ -117,10 +174,13 @@ async function translateWithBuiltinAI(
     )
   }
 
-  const content =
-    result.response ?? result.choices?.[0]?.message?.content ?? ''
-  const translations = parseTranslations(content, texts)
-  return Response.json({ translations, source: 'builtin' })
+  // 补翻漏掉的条目（小批重试，最多 2 轮）
+  const finalTranslations = await fillEmptyTranslations(
+    (subTexts, numbered) => runBuiltinAI(env, numbered, subTexts.length),
+    texts,
+    translations
+  )
+  return Response.json({ translations: finalTranslations, source: 'builtin' })
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
@@ -187,7 +247,38 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const content = data.choices?.[0]?.message?.content || ''
     const translations = parseTranslations(content, texts)
 
-    return Response.json({ translations, source: 'custom' })
+    // 自定义模型同样可能漏翻个别条目，补翻空条目（小批重试，最多 2 轮）
+    const finalTranslations = await fillEmptyTranslations(
+      async (subTexts, numbered) => {
+        const subResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: numbered },
+            ],
+            temperature: 0.3,
+          }),
+        })
+        if (!subResponse.ok) {
+          throw new Error(`补翻请求失败 (${subResponse.status})`)
+        }
+        const subData = (await subResponse.json()) as {
+          choices?: { message?: { content?: string } }[]
+        }
+        const subContent = subData.choices?.[0]?.message?.content || ''
+        return parseTranslations(subContent, subTexts)
+      },
+      texts,
+      translations
+    )
+
+    return Response.json({ translations: finalTranslations, source: 'custom' })
   } catch (err) {
     const message = err instanceof Error ? err.message : '翻译请求失败'
     return Response.json({ error: message }, { status: 500 })
