@@ -270,11 +270,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         words?: WhisperWord[]
       }
       try {
-        // workers-types 的 whisper 类型未声明 language 字段，但运行时需要它
-        // （不传 language 在多语言音频时会报 3010），用类型断言绕过
+        // 不传 language 让 Whisper 自动检测语种（支持中文/日语/韩语等），
+        // 之前硬编码 'en' 会导致非英语音频识别严重降级（前半段丢失）。
+        // workers-types 的 whisper 类型未声明 language 字段，用类型断言绕过
         result = await env.AI.run('@cf/openai/whisper', {
           audio: audioBytes,
-          language: 'en',
         } as { audio: number[] }) as {
           text?: string
           vtt?: string
