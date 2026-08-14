@@ -4,14 +4,24 @@ export interface SubtitleSegment {
   start: number // 秒
   end: number // 秒
   textEn: string
+  textZh: string // 中文译文
   textOriginal: string // 原文（源语言识别结果）
+  speaker?: number // 说话人编号（多说话人检测结果，从 0 开始；未检测则无此字段）
+}
+
+// 说话人信息（多说话人配音用）
+export interface SpeakerInfo {
+  id: number // 与 SubtitleSegment.speaker 对应
+  voiceType: string // 火山引擎音色 ID，空串表示跟随 ttsConfig.voiceType 兜底
 }
 
 // 字幕样式设置
 export interface SubtitleSettings {
   showEn: boolean
+  showZh: boolean
   showOriginal: boolean
   enColor: string
+  zhColor: string
   originalColor: string
   positionY: number // 字幕垂直位置：距顶部百分比 0-100
   fontSize: number
@@ -117,8 +127,10 @@ export const DEFAULT_SOURCE_LANGUAGE: SourceLanguage = 'auto'
 // 默认样式
 export const DEFAULT_SETTINGS: SubtitleSettings = {
   showEn: true,
-  showOriginal: true,
+  showZh: true,
+  showOriginal: false,
   enColor: '#ffffff',
+  zhColor: '#7dd3fc', // 浅蓝，与白（英文）/金黄（原文）协调
   originalColor: '#ffd700',
   positionY: 67, // 默认位于画面下方约 1/3 处
   fontSize: 24,

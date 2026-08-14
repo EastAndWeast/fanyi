@@ -121,9 +121,9 @@ function SubtitleOverlay({
   if (subs.length === 0) return null
 
   const visibleSubs = subs.filter((s) => {
-    if (settings.showEn && settings.showOriginal) return s.textEn || s.textOriginal
-    if (settings.showEn) return s.textEn
-    if (settings.showOriginal) return s.textOriginal
+    if (settings.showOriginal && s.textOriginal) return true
+    if (settings.showZh && s.textZh) return true
+    if (settings.showEn && s.textEn) return true
     return false
   })
 
@@ -159,6 +159,23 @@ function SubtitleOverlay({
                 className="mb-1"
               >
                 {s.textOriginal}
+              </div>
+            ) : null
+          )}
+        {settings.showZh &&
+          visibleSubs.map((s) =>
+            s.textZh ? (
+              <div
+                key={`zh-${s.id}`}
+                style={{
+                  color: settings.zhColor,
+                  fontSize: `${settings.fontSize}px`,
+                  lineHeight: '1.4',
+                  fontWeight: 600,
+                }}
+                className="mb-1"
+              >
+                {s.textZh}
               </div>
             ) : null
           )}

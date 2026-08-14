@@ -24,17 +24,23 @@ function formatVTTTime(seconds: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`
 }
 
+// 字幕导出语言：'zh-en' 为中英双语（中一行+英一行），'both' 为旧的原文+英文
+export type SubtitleLang = 'en' | 'zh' | 'original' | 'zh-en' | 'both'
+
 /**
  * 生成 SRT 格式字幕
  */
 export function generateSRT(
   subtitles: SubtitleSegment[],
-  lang: 'en' | 'original' | 'both' = 'both'
+  lang: SubtitleLang = 'both'
 ): string {
   return subtitles
     .map((sub, index) => {
       const texts: string[] = []
-      if (lang === 'en' || lang === 'both') {
+      if (lang === 'zh' || lang === 'zh-en') {
+        if (sub.textZh) texts.push(sub.textZh)
+      }
+      if (lang === 'en' || lang === 'zh-en' || lang === 'both') {
         if (sub.textEn) texts.push(sub.textEn)
       }
       if (lang === 'original' || lang === 'both') {
@@ -54,12 +60,15 @@ export function generateSRT(
  */
 export function generateVTT(
   subtitles: SubtitleSegment[],
-  lang: 'en' | 'original' | 'both' = 'both'
+  lang: SubtitleLang = 'both'
 ): string {
   const body = subtitles
     .map((sub) => {
       const texts: string[] = []
-      if (lang === 'en' || lang === 'both') {
+      if (lang === 'zh' || lang === 'zh-en') {
+        if (sub.textZh) texts.push(sub.textZh)
+      }
+      if (lang === 'en' || lang === 'zh-en' || lang === 'both') {
         if (sub.textEn) texts.push(sub.textEn)
       }
       if (lang === 'original' || lang === 'both') {

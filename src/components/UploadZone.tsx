@@ -12,6 +12,10 @@ export default function UploadZone() {
   const ttsConfig = useStore((s) => s.ttsConfig)
   const sourceLanguage = useStore((s) => s.sourceLanguage)
   const setSourceLanguage = useStore((s) => s.setSourceLanguage)
+  const diarizationEnabled = useStore((s) => s.diarizationEnabled)
+  const setDiarizationEnabled = useStore((s) => s.setDiarizationEnabled)
+  const speakerCount = useStore((s) => s.speakerCount)
+  const setSpeakerCount = useStore((s) => s.setSpeakerCount)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   // 默认收起：内置免费翻译开箱即用，无需引导用户展开配置
@@ -170,6 +174,54 @@ export default function UploadZone() {
           {showTtsSettings && (
             <div className="border-t border-slate-200 p-4">
               <TtsSettings />
+            </div>
+          )}
+        </div>
+
+        {/* 多说话人检测 */}
+        <div className="rounded-lg bg-white border border-slate-200 px-4 py-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-700">检测多人声音</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                本地识别不同说话人，导出时可分配不同音色（首次使用需下载约 45MB 模型）
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDiarizationEnabled(!diarizationEnabled)}
+              className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+                diarizationEnabled ? 'bg-blue-600' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                  diarizationEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+          {diarizationEnabled && (
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-slate-500 flex-shrink-0">
+                说话人数
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={speakerCount ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value.trim()
+                  const n = parseInt(v, 10)
+                  setSpeakerCount(v === '' || isNaN(n) || n < 1 ? null : n)
+                }}
+                placeholder="自动"
+                className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-blue-500"
+              />
+              <p className="text-xs text-slate-400">
+                留空自动判断；检测不准时可手动指定
+              </p>
             </div>
           )}
         </div>

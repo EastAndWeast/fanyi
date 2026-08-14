@@ -11,6 +11,7 @@ interface TranslateRequest {
   apiKey: string
   model: string
   texts: string[]
+  targetLang?: 'en' | 'zh' // 目标语言，默认 'en'
 }
 
 // 内置免费翻译使用的 Workers AI 模型
@@ -31,12 +32,16 @@ function normalizeEndpoint(endpoint: string): string {
   return url
 }
 
-const SYSTEM_PROMPT = `你是一个专业的翻译助手。请将以下文本翻译为英文。
+// 按目标语言生成翻译提示词
+function buildSystemPrompt(targetLang: 'en' | 'zh'): string {
+  const langName = targetLang === 'zh' ? '中文' : '英文'
+  return `你是一个专业的翻译助手。请将以下文本翻译为${langName}。
 每一行格式为 [序号] 原文文本（可能是日语、中文、韩语、法语等各种语言）。
-请保持序号不变，将每行内容翻译为英文。
+请保持序号不变，将每行内容翻译为${langName}。
 输出格式必须是JSON数组，如：["Translation 1", "Translation 2", ...]
 只输出JSON数组，不要添加任何其他文字、markdown标记或解释。
-保持翻译简洁自然，适合字幕显示。如果原文已经是英文，请原样输出。`
+保持翻译简洁自然，适合字幕显示。如果原文已经是${langName}，请原样输出。`
+}
 
 // 解析模型返回的翻译内容，容错 markdown 代码块和非 JSON 格式
 function parseTranslations(content: string, texts: string[]): string[] {
@@ -78,11 +83,11 @@ function isQuotaError(message: string): boolean {
 }
 
 // 单次调用 Workers AI 翻译（返回原始 translations，可能含空条目）
-async function runBuiltinAI(env: Env, numberedTexts: string, count: number): Promise<string[]> {
+async function runBuiltinAI(env: Env, numberedTexts: string, count: number, systemPrompt: string): Promise<string[]> {
   // 新模型可能返回 OpenAI 兼容格式（choices）或老式格式（response）
   const result = (await env.AI.run(BUILTIN_MODEL as Parameters<Ai['run']>[0], {
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: numberedTexts },
     ],
     temperature: 0.3,
@@ -152,11 +157,12 @@ async function fillEmptyTranslations(
 async function translateWithBuiltinAI(
   env: Env,
   texts: string[],
-  numberedTexts: string
+  numberedTexts: string,
+  systemPrompt: string
 ): Promise<Response> {
   let translations: string[]
   try {
-    translations = await runBuiltinAI(env, numberedTexts, texts.length)
+    translations = await runBuiltinAI(env, numberedTexts, texts.length, systemPrompt)
   } catch (aiError) {
     const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
     console.error('[Translate] Workers AI error:', errMsg)
@@ -176,7 +182,7 @@ async function translateWithBuiltinAI(
 
   // 补翻漏掉的条目（小批重试，最多 2 轮）
   const finalTranslations = await fillEmptyTranslations(
-    (subTexts, numbered) => runBuiltinAI(env, numbered, subTexts.length),
+    (subTexts, numbered) => runBuiltinAI(env, numbered, subTexts.length, systemPrompt),
     texts,
     translations
   )
@@ -190,6 +196,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const body = (await request.json()) as TranslateRequest
     const { apiKey, model, texts } = body
     const endpoint = normalizeEndpoint(body.endpoint || '')
+    const systemPrompt = buildSystemPrompt(body.targetLang === 'zh' ? 'zh' : 'en')
 
     if (!texts || texts.length === 0) {
       return Response.json(
@@ -205,7 +212,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     // 未配置用户 Key 时，使用内置 Workers AI 免费翻译
     if (!apiKey) {
-      return translateWithBuiltinAI(env, texts, numberedTexts)
+      return translateWithBuiltinAI(env, texts, numberedTexts, systemPrompt)
     }
 
     if (!endpoint || !model) {
@@ -224,7 +231,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: numberedTexts },
         ],
         temperature: 0.3,
@@ -259,7 +266,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           body: JSON.stringify({
             model,
             messages: [
-              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'system', content: systemPrompt },
               { role: 'user', content: numbered },
             ],
             temperature: 0.3,

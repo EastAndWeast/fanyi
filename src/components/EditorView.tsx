@@ -4,7 +4,8 @@ import VideoPlayer from './VideoPlayer'
 import SubtitleList from './SubtitleList'
 import StyleSettings from './StyleSettings'
 import ApiKeySettings from './ApiKeySettings'
-import { callTranslate } from '../lib/api'
+import { fillSubtitleTranslations } from '../lib/api'
+import { resolveTranslateDirection } from '../lib/langDetect'
 
 type TabType = 'subtitles' | 'style' | 'api'
 
@@ -14,6 +15,7 @@ export default function EditorView() {
   const setSubtitles = useStore((s) => s.setSubtitles)
   const apiConfig = useStore((s) => s.apiConfig)
   const mediaKind = useStore((s) => s.mediaKind)
+  const sourceLanguage = useStore((s) => s.sourceLanguage)
 
   const [tab, setTab] = useState<TabType>('subtitles')
   const [retranslating, setRetranslating] = useState(false)
@@ -28,10 +30,15 @@ export default function EditorView() {
     setRetranslating(true)
     setTranslateError('')
     try {
-      const texts = subtitles.map((s) => s.textOriginal)
-      const translations = await callTranslate(apiConfig, texts)
+      // 与处理流程同一套规则：按源语言决定翻译方向，只补齐缺失的译文
+      const direction = resolveTranslateDirection(
+        sourceLanguage,
+        subtitles.map((s) => s.textOriginal).join('\n')
+      )
       setSubtitles(
-        subtitles.map((s, i) => ({ ...s, textEn: translations[i] || '' }))
+        await fillSubtitleTranslations(apiConfig, subtitles, direction, {
+          onlyMissing: true,
+        })
       )
     } catch (err) {
       setTranslateError(

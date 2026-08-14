@@ -90,6 +90,13 @@ function drawSubtitle(
         size: fontSize,
       })
     }
+    if (settings.showZh && sub.textZh) {
+      lines.push({
+        text: sub.textZh,
+        color: settings.zhColor,
+        size: fontSize,
+      })
+    }
     if (settings.showEn && sub.textEn) {
       lines.push({
         text: sub.textEn,
@@ -141,17 +148,23 @@ function drawSubtitle(
     ctx.lineWidth = Math.max(2, line.size / 12)
     ctx.lineJoin = 'round'
 
-    // 自动换行
+    // 自动换行：优先按空格分词；若存在超过最大宽度的"词"
+    // （中文等无空格文本按空格分词会退化为整行一个词），则按字符切分换行
     const maxWidthLine = w * 0.9
     const words = line.text.split(' ')
+    const charMode = words.some(
+      (word) => ctx.measureText(word).width > maxWidthLine
+    )
+    const units = charMode ? Array.from(line.text) : words
+    const joiner = charMode ? '' : ' '
     const drawLines: string[] = []
     let currentLine = ''
 
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word
+    for (const unit of units) {
+      const testLine = currentLine ? `${currentLine}${joiner}${unit}` : unit
       if (ctx.measureText(testLine).width > maxWidthLine && currentLine) {
         drawLines.push(currentLine)
-        currentLine = word
+        currentLine = unit
       } else {
         currentLine = testLine
       }

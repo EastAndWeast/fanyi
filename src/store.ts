@@ -6,6 +6,7 @@ import type {
   TtsConfig,
   AppStep,
   SourceLanguage,
+  SpeakerInfo,
 } from './types'
 import {
   DEFAULT_SETTINGS,
@@ -41,6 +42,17 @@ interface AppState {
   // 源语言（视频/音频说的语言，用于语音识别；'auto' 为自动检测）
   sourceLanguage: SourceLanguage
 
+  // 多说话人检测与配音
+  speakers: SpeakerInfo[] // 检测到的说话人及各自音色（不持久化，随视频生命周期）
+  diarizationEnabled: boolean // 是否启用多人声音检测
+  speakerCount: number | null // 指定说话人数；null = 自动聚类
+
+  // 配音开关与合成好的配音音轨
+  // 放全局 store 而非 ExportView 组件内：否则「返回编辑」再回来开关被重置、
+  // 音轨丢失，导出会静默退回原声（用户以为开了配音，导出还是原声）
+  voiceOverEnabled: boolean
+  voiceTrack: AudioBuffer | null // 不持久化，随视频生命周期
+
   // Actions
   setStep: (step: AppStep) => void
   setVideo: (file: File) => void
@@ -52,6 +64,12 @@ interface AppState {
   updateApiConfig: (patch: Partial<ApiConfig>) => void
   updateTtsConfig: (patch: Partial<TtsConfig>) => void
   setSourceLanguage: (lang: SourceLanguage) => void
+  setSpeakers: (speakers: SpeakerInfo[]) => void
+  setSpeakerVoice: (id: number, voiceType: string) => void
+  setDiarizationEnabled: (enabled: boolean) => void
+  setSpeakerCount: (count: number | null) => void
+  setVoiceOverEnabled: (enabled: boolean) => void
+  setVoiceTrack: (track: AudioBuffer | null) => void
   reset: () => void
 }
 
@@ -89,19 +107,34 @@ function loadPersisted(): {
   apiConfig: ApiConfig
   ttsConfig: TtsConfig
   sourceLanguage: SourceLanguage
+  diarizationEnabled: boolean
+  speakerCount: number | null
 } {
+  const defaults = {
+    settings: DEFAULT_SETTINGS,
+    apiConfig: DEFAULT_API_CONFIG,
+    ttsConfig: DEFAULT_TTS_CONFIG,
+    sourceLanguage: DEFAULT_SOURCE_LANGUAGE,
+    diarizationEnabled: true,
+    speakerCount: null,
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { settings: DEFAULT_SETTINGS, apiConfig: DEFAULT_API_CONFIG, ttsConfig: DEFAULT_TTS_CONFIG, sourceLanguage: DEFAULT_SOURCE_LANGUAGE }
+    if (!raw) return defaults
     const parsed = JSON.parse(raw)
     return {
       settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
       apiConfig: { ...DEFAULT_API_CONFIG, ...parsed.apiConfig },
       ttsConfig: { ...DEFAULT_TTS_CONFIG, ...parsed.ttsConfig },
       sourceLanguage: parsed.sourceLanguage ?? DEFAULT_SOURCE_LANGUAGE,
+      diarizationEnabled: parsed.diarizationEnabled ?? true,
+      speakerCount:
+        typeof parsed.speakerCount === 'number' && parsed.speakerCount > 0
+          ? parsed.speakerCount
+          : null,
     }
   } catch {
-    return { settings: DEFAULT_SETTINGS, apiConfig: DEFAULT_API_CONFIG, ttsConfig: DEFAULT_TTS_CONFIG, sourceLanguage: DEFAULT_SOURCE_LANGUAGE }
+    return defaults
   }
 }
 
@@ -109,12 +142,14 @@ function persist(
   settings: SubtitleSettings,
   apiConfig: ApiConfig,
   ttsConfig: TtsConfig,
-  sourceLanguage: SourceLanguage
+  sourceLanguage: SourceLanguage,
+  diarizationEnabled: boolean,
+  speakerCount: number | null
 ) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ settings, apiConfig, ttsConfig, sourceLanguage })
+      JSON.stringify({ settings, apiConfig, ttsConfig, sourceLanguage, diarizationEnabled, speakerCount })
     )
   } catch {
     // ignore
@@ -135,6 +170,11 @@ export const useStore = create<AppState>((set) => ({
   apiConfig: initial.apiConfig,
   ttsConfig: initial.ttsConfig,
   sourceLanguage: initial.sourceLanguage,
+  speakers: [],
+  diarizationEnabled: initial.diarizationEnabled,
+  speakerCount: initial.speakerCount,
+  voiceOverEnabled: false,
+  voiceTrack: null,
 
   setStep: (step) => set({ step }),
 
@@ -146,7 +186,7 @@ export const useStore = create<AppState>((set) => ({
   clearVideo: () =>
     set((state) => {
       if (state.videoUrl) URL.revokeObjectURL(state.videoUrl)
-      return { videoFile: null, videoUrl: null, subtitles: [], videoDuration: 0, mediaKind: 'video' }
+      return { videoFile: null, videoUrl: null, subtitles: [], videoDuration: 0, mediaKind: 'video', speakers: [], voiceTrack: null }
     }),
 
   setSubtitles: (subtitles) => set({ subtitles }),
@@ -163,29 +203,54 @@ export const useStore = create<AppState>((set) => ({
   updateSettings: (patch) =>
     set((state) => {
       const settings = { ...state.settings, ...patch }
-      persist(settings, state.apiConfig, state.ttsConfig, state.sourceLanguage)
+      persist(settings, state.apiConfig, state.ttsConfig, state.sourceLanguage, state.diarizationEnabled, state.speakerCount)
       return { settings }
     }),
 
   updateApiConfig: (patch) =>
     set((state) => {
       const apiConfig = { ...state.apiConfig, ...patch }
-      persist(state.settings, apiConfig, state.ttsConfig, state.sourceLanguage)
+      persist(state.settings, apiConfig, state.ttsConfig, state.sourceLanguage, state.diarizationEnabled, state.speakerCount)
       return { apiConfig }
     }),
 
   updateTtsConfig: (patch) =>
     set((state) => {
       const ttsConfig = { ...state.ttsConfig, ...patch }
-      persist(state.settings, state.apiConfig, ttsConfig, state.sourceLanguage)
+      persist(state.settings, state.apiConfig, ttsConfig, state.sourceLanguage, state.diarizationEnabled, state.speakerCount)
       return { ttsConfig }
     }),
 
   setSourceLanguage: (lang) =>
     set((state) => {
-      persist(state.settings, state.apiConfig, state.ttsConfig, lang)
+      persist(state.settings, state.apiConfig, state.ttsConfig, lang, state.diarizationEnabled, state.speakerCount)
       return { sourceLanguage: lang }
     }),
+
+  setSpeakers: (speakers) => set({ speakers }),
+
+  setSpeakerVoice: (id, voiceType) =>
+    set((state) => ({
+      speakers: state.speakers.map((s) =>
+        s.id === id ? { ...s, voiceType } : s
+      ),
+    })),
+
+  setDiarizationEnabled: (enabled) =>
+    set((state) => {
+      persist(state.settings, state.apiConfig, state.ttsConfig, state.sourceLanguage, enabled, state.speakerCount)
+      return { diarizationEnabled: enabled }
+    }),
+
+  setSpeakerCount: (count) =>
+    set((state) => {
+      persist(state.settings, state.apiConfig, state.ttsConfig, state.sourceLanguage, state.diarizationEnabled, count)
+      return { speakerCount: count }
+    }),
+
+  setVoiceOverEnabled: (enabled) => set({ voiceOverEnabled: enabled }),
+
+  setVoiceTrack: (track) => set({ voiceTrack: track }),
 
   reset: () =>
     set((state) => {
@@ -198,6 +263,8 @@ export const useStore = create<AppState>((set) => ({
         videoDuration: 0,
         activeSubtitleId: null,
         mediaKind: 'video',
+        speakers: [],
+        voiceTrack: null,
       }
     }),
 }))

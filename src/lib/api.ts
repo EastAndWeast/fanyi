@@ -169,7 +169,7 @@ async function processSTTChunk(
  * @param audioWav WAV 格式的 ArrayBuffer（16kHz 单声道 16-bit）
  * @param language 源语言（'auto' 为自动检测）
  * @param onProgress 进度回调（已完成块数, 总块数）
- * @returns 字幕片段数组（仅原文，textEn 为空）
+ * @returns 字幕片段数组（仅原文，textEn/textZh 为空）
  */
 export async function callSTT(
   audioWav: ArrayBuffer,
@@ -213,6 +213,7 @@ export async function callSTT(
         end: seg.end + offsetSeconds,
         textOriginal: seg.text,
         textEn: '',
+        textZh: '',
       })
     }
   }
@@ -256,12 +257,14 @@ const TRANSLATE_CONCURRENCY = 3
  * @param config API 配置
  * @param texts 待翻译的原文字幕文本数组
  * @param onProgress 进度回调（已完成批数, 总批数）
- * @returns 英文翻译数组
+ * @param targetLang 目标语言（默认英文）
+ * @returns 目标语言的翻译数组
  */
 export async function callTranslate(
   config: ApiConfig,
   texts: string[],
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  targetLang: 'en' | 'zh' = 'en'
 ): Promise<string[]> {
   // 将文本切分为多个批次
   const batches: string[][] = []
@@ -279,7 +282,7 @@ export async function callTranslate(
   async function worker() {
     while (nextIndex < totalBatches) {
       const i = nextIndex++
-      results[i] = await callTranslateBatchWithRetry(config, batches[i])
+      results[i] = await callTranslateBatchWithRetry(config, batches[i], targetLang)
       completed++
       onProgress?.(completed, totalBatches)
     }
@@ -313,6 +316,7 @@ export async function callTranslate(
 async function callTranslateBatchWithRetry(
   config: ApiConfig,
   texts: string[],
+  targetLang: 'en' | 'zh',
   depth = 0
 ): Promise<string[]> {
   let lastError: Error | null = null
@@ -327,6 +331,7 @@ async function callTranslateBatchWithRetry(
           apiKey: config.apiKey,
           model: config.model,
           texts,
+          targetLang,
         }),
       })
 
@@ -351,6 +356,7 @@ async function callTranslateBatchWithRetry(
           const refill = await callTranslateBatchWithRetry(
             config,
             emptyTexts,
+            targetLang,
             depth + 1
           )
           emptyIdx.forEach((globalIdx, j) => {
@@ -376,6 +382,92 @@ async function callTranslateBatchWithRetry(
   }
 
   throw lastError || new Error('翻译失败')
+}
+
+/**
+ * 按翻译方向补齐字幕的中/英文译文
+ *
+ * - direction='en'：源语言为英文，textEn 直接用原文，只需翻译 textZh
+ * - direction='zh'：源语言为中文，textZh 直接用原文，只需翻译 textEn
+ * - direction='other'：其他语言保留原文，textEn、textZh 各译一轮
+ *
+ * onlyMissing=true 时只翻译当前为空的译文（编辑页"重新翻译"补齐用）。
+ * 单路翻译失败不阻塞，该路留空；所有路都失败时抛出错误由调用方提示。
+ */
+export async function fillSubtitleTranslations(
+  config: ApiConfig,
+  subtitles: SubtitleSegment[],
+  direction: 'en' | 'zh' | 'other',
+  options: {
+    onlyMissing?: boolean
+    onProgress?: (completed: number, total: number) => void
+  } = {}
+): Promise<SubtitleSegment[]> {
+  const { onlyMissing = false, onProgress } = options
+  const result = subtitles.map((s) => ({ ...s }))
+  const needTranslate = (value: string) => !onlyMissing || !value.trim()
+  const missingIndexes = (field: 'textEn' | 'textZh') =>
+    result.map((s, i) => (needTranslate(s[field]) ? i : -1)).filter((i) => i >= 0)
+
+  // 翻译任务：写哪个字段、目标语言、需要翻译的字幕索引
+  const jobs: { field: 'textEn' | 'textZh'; targetLang: 'en' | 'zh'; indexes: number[] }[] = []
+  if (direction === 'en') {
+    result.forEach((s) => {
+      s.textEn = s.textOriginal
+    })
+    const indexes = missingIndexes('textZh')
+    if (indexes.length) jobs.push({ field: 'textZh', targetLang: 'zh', indexes })
+  } else if (direction === 'zh') {
+    result.forEach((s) => {
+      s.textZh = s.textOriginal
+    })
+    const indexes = missingIndexes('textEn')
+    if (indexes.length) jobs.push({ field: 'textEn', targetLang: 'en', indexes })
+  } else {
+    const enIndexes = missingIndexes('textEn')
+    const zhIndexes = missingIndexes('textZh')
+    if (enIndexes.length) jobs.push({ field: 'textEn', targetLang: 'en', indexes: enIndexes })
+    if (zhIndexes.length) jobs.push({ field: 'textZh', targetLang: 'zh', indexes: zhIndexes })
+  }
+
+  // 多路翻译（其他语言）时进度按总批次数合并展示
+  const jobTotalBatches = jobs.map((j) => Math.ceil(j.indexes.length / TRANSLATE_BATCH_SIZE))
+  const totalBatches = jobTotalBatches.reduce((a, b) => a + b, 0)
+  const jobCompleted = jobs.map(() => 0)
+  const reportProgress = () =>
+    onProgress?.(jobCompleted.reduce((a, b) => a + b, 0), totalBatches)
+  reportProgress()
+
+  const errors: string[] = []
+  for (let j = 0; j < jobs.length; j++) {
+    const job = jobs[j]
+    try {
+      const translations = await callTranslate(
+        config,
+        job.indexes.map((i) => result[i].textOriginal),
+        (completed) => {
+          jobCompleted[j] = completed
+          reportProgress()
+        },
+        job.targetLang
+      )
+      job.indexes.forEach((segIdx, k) => {
+        result[segIdx][job.field] = translations[k] || ''
+      })
+    } catch (err) {
+      // 该路翻译失败不阻塞，译文留空；记录错误用于全部失败时抛出
+      console.error(`翻译失败（目标语言 ${job.targetLang}）:`, err)
+      errors.push(err instanceof Error ? err.message : String(err))
+    }
+    jobCompleted[j] = jobTotalBatches[j]
+    reportProgress()
+  }
+
+  // 所有翻译路都失败时抛出，让调用方提示用户；部分失败则保留成功的那路
+  if (jobs.length > 0 && errors.length === jobs.length) {
+    throw new Error(errors[0])
+  }
+  return result
 }
 
 /**

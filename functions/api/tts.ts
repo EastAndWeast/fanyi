@@ -38,8 +38,15 @@ const MAX_RETRIES = 3
 const RETRY_BASE_MS = 1000
 
 // ── 火山引擎常量 ──────────────────────────────────────────────
-const VOLC_TTS_URL =
-  'https://openspeech.bytedance.com/api/v3/tts/unidirectional'
+// 火山引擎有两套计费接入，路径不同、协议一致：
+//   按量计费:   /api/v3/tts/unidirectional
+//   资源包(plan): /api/v3/plan/tts/unidirectional
+// 依次尝试，命中后在当前 isolate 内记住，避免后续请求重复试错
+const VOLC_TTS_URLS = [
+  'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+  'https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional',
+]
+let volcWorkingUrl: string | null = null
 const VOLC_RESOURCE_ID = 'seed-tts-2.0'
 // PCM 输出采样率（seed-tts-2.0 默认 24kHz）
 const VOLC_PCM_SAMPLE_RATE = 24000
@@ -166,23 +173,30 @@ async function synthWithMelotts(
  * V3 unidirectional 接口返回流式多行 JSON，每行 { code, data }，
  * data 为 base64 编码的 PCM 音频片段，需拼接后封装为 WAV。
  *
- * 认证：同时发送 Bearer 和 X-Api-Access-Key，兼容 Ark API Key 和
- * 语音控制台 Access Token 两种密钥体系。
+ * 认证：同时发送 Bearer / X-Api-Key / X-Api-Access-Key 三种头，
+ * 兼容方舟 Ark API Key、新版语音控制台 API Key、旧版 Access Token。
  */
-async function synthWithVolcengine(
+async function synthWithVolcengineAt(
+  url: string,
   apiKey: string,
   appId: string,
   voiceType: string,
   text: string
 ): Promise<string> {
-  const speaker = voiceType || 'zh_female_wanwanxiaohe_moon_bigtts'
+  // 默认音色：seed-tts-2.0 的 Vivi 2.0（uranus_bigtts 系列；
+  // 1.0 的 moon_bigtts 音色与 seed-tts-2.0 不兼容）
+  const speaker = voiceType || 'zh_female_vv_uranus_bigtts'
   const requestId = uuid()
   const userId = uuid()
 
-  // 双发认证：兼容 Ark（Bearer）和语音控制台（X-Api-Access-Key）
+  // 三发认证，兼容三种密钥体系：
+  // - Bearer:           方舟 Ark API Key
+  // - X-Api-Key:        新版语音控制台 API Key（新版只需这一个头）
+  // - X-Api-Access-Key: 旧版语音控制台 Access Token（需配合 X-Api-App-Key）
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${apiKey}`,
+    'X-Api-Key': apiKey,
     'X-Api-Access-Key': apiKey,
     'X-Api-Resource-Id': VOLC_RESOURCE_ID,
     'X-Api-Request-Id': requestId,
@@ -203,7 +217,7 @@ async function synthWithVolcengine(
     },
   }
 
-  const response = await fetch(VOLC_TTS_URL, {
+  const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -264,6 +278,35 @@ async function synthWithVolcengine(
 
   const wav = pcmToWav(mergedPcm, VOLC_PCM_SAMPLE_RATE)
   return uint8ToBase64(wav)
+}
+
+/**
+ * 依次尝试按量计费 / 资源包(plan) 两套端点，命中后记住可用端点。
+ * 两套端点协议完全一致，仅路径不同；用户用哪种计费方式取决于其控制台开通情况。
+ */
+async function synthWithVolcengine(
+  apiKey: string,
+  appId: string,
+  voiceType: string,
+  text: string
+): Promise<string> {
+  // 已命中的端点优先，其余按默认顺序跟上
+  const candidates = volcWorkingUrl
+    ? [volcWorkingUrl, ...VOLC_TTS_URLS.filter((u) => u !== volcWorkingUrl)]
+    : VOLC_TTS_URLS
+
+  let lastError: Error | null = null
+  for (const url of candidates) {
+    try {
+      const audio = await synthWithVolcengineAt(url, apiKey, appId, voiceType, text)
+      volcWorkingUrl = url
+      return audio
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      console.warn(`[TTS] 火山引擎端点失败 (${url}):`, lastError.message)
+    }
+  }
+  throw lastError || new Error('火山引擎合成失败')
 }
 
 // ── 路由：根据 engine 选择引擎 ──────────────────────────────

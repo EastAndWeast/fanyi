@@ -4,8 +4,23 @@ import VideoPlayer from './VideoPlayer'
 import { burnSubtitlesToVideo, downloadBlob, hasValidAudio } from '../lib/subtitleBurner'
 import { muxOriginalAudio } from '../lib/ffmpeg'
 import { generateSRT, generateVTT, downloadFile } from '../lib/srt'
+import type { SubtitleLang } from '../lib/srt'
 import { synthesizeVoice } from '../lib/tts'
 import { mixVoiceTrack } from '../lib/voiceMixer'
+
+// 预置豆包（火山引擎）音色，均为 seed-tts-2.0 专用音色（uranus_bigtts 系列），
+// 支持中英文混读。注意：1.0 的 moon_bigtts 系列与 seed-tts-2.0 不兼容
+// （会报 resource ID is mismatched with speaker related resource）。
+// 音色 ID 出处：火山引擎文档「音色列表 - 豆包语音合成模型2.0」（docs/6561/1257544），
+// 实际可用音色以控制台开通情况为准（未开通的音色可改用「自定义」输入）
+const VOICE_PRESETS: { id: string; label: string }[] = [
+  { id: 'zh_female_vv_uranus_bigtts', label: 'Vivi 2.0（女声）' },
+  { id: 'zh_female_kailangjiejie_uranus_bigtts', label: '开朗姐姐 2.0（女声）' },
+  { id: 'zh_female_jitangmei_uranus_bigtts', label: '鸡汤妹妹 2.0（女声）' },
+  { id: 'zh_male_cixingjieshuonan_uranus_bigtts', label: '磁性解说 2.0（男声）' },
+  { id: 'zh_male_fanjuanqingnian_uranus_bigtts', label: '反卷青年 2.0（男声）' },
+  { id: 'zh_male_kailangdidi_uranus_bigtts', label: '开朗弟弟 2.0（男声）' },
+]
 
 export default function ExportView() {
   const subtitles = useStore((s) => s.subtitles)
@@ -16,6 +31,13 @@ export default function ExportView() {
   const reset = useStore((s) => s.reset)
   const ttsConfig = useStore((s) => s.ttsConfig)
   const updateTtsConfig = useStore((s) => s.updateTtsConfig)
+  const speakers = useStore((s) => s.speakers)
+  const setSpeakerVoice = useStore((s) => s.setSpeakerVoice)
+  // 配音开关与音轨放全局 store：避免「返回编辑」再回来时组件重置导致静默用原声导出
+  const voiceOverEnabled = useStore((s) => s.voiceOverEnabled)
+  const setVoiceOverEnabled = useStore((s) => s.setVoiceOverEnabled)
+  const voiceTrack = useStore((s) => s.voiceTrack)
+  const setVoiceTrack = useStore((s) => s.setVoiceTrack)
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -26,19 +48,56 @@ export default function ExportView() {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   // 配音相关状态
-  const [voiceOverEnabled, setVoiceOverEnabled] = useState(false)
   const [voiceSynthesizing, setVoiceSynthesizing] = useState(false)
   const [voiceProgress, setVoiceProgress] = useState<{
     completed: number
     total: number
   } | null>(null)
-  const [voiceTrack, setVoiceTrack] = useState<AudioBuffer | null>(null)
   const [voiceError, setVoiceError] = useState('')
   const [voiceStats, setVoiceStats] = useState<{
     success: number
     total: number
   } | null>(null)
   const [showTtsKey, setShowTtsKey] = useState(false)
+  // 每位说话人是否使用「自定义」音色输入（key 为 speaker id）
+  const [customVoiceMode, setCustomVoiceMode] = useState<
+    Record<number, boolean>
+  >({})
+  // 音色试听：正在试听的标识（'single' 或 speaker id 的字符串形式）
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState('')
+
+  // 用指定音色合成一句英文示例并播放（验证音色是否开通、听感是否符合预期）
+  const handlePreviewVoice = async (voiceType: string, key: string) => {
+    setPreviewError('')
+    setPreviewingVoice(key)
+    try {
+      const resp = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engine: 'volcengine',
+          texts: ['Hello! Nice to meet you. This is a voice preview.'],
+          apiKey: ttsConfig.apiKey,
+          appId: ttsConfig.appId,
+          voiceType,
+        }),
+      })
+      const data = (await resp.json()) as {
+        error?: string
+        results?: { audio?: string; error?: string }[]
+      }
+      const item = data.results?.[0]
+      if (!resp.ok || !item?.audio) {
+        throw new Error(data.error || item?.error || '试听合成失败')
+      }
+      await new Audio(`data:audio/wav;base64,${item.audio}`).play()
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : '试听失败')
+    } finally {
+      setPreviewingVoice(null)
+    }
+  }
 
   // 获取媒体文件的实际时长（秒），用于确保配音音轨长度匹配
   const getMediaDuration = (file: File | null): Promise<number> => {
@@ -72,15 +131,19 @@ export default function ExportView() {
     setVoiceTrack(null)
     setVoiceStats(null)
     try {
-      const voiceBuffers = await synthesizeVoice(subtitles, ttsConfig, (completed, total) => {
+      const { buffers: voiceBuffers, firstError } = await synthesizeVoice(subtitles, ttsConfig, (completed, total) => {
         setVoiceProgress({ completed, total })
-      })
+      }, speakers)
 
       const successCount = voiceBuffers.filter(Boolean).length
       setVoiceStats({ success: successCount, total: subtitles.length })
 
       if (successCount === 0) {
-        throw new Error('所有配音合成失败，免费 TTS 服务可能暂时不可用，请稍后重试')
+        throw new Error(
+          firstError
+            ? `配音合成失败：${firstError}`
+            : '所有配音合成失败，免费 TTS 服务可能暂时不可用，请稍后重试'
+        )
       }
 
       // 获取视频/音频实际时长，确保配音音轨长度匹配
@@ -105,6 +168,8 @@ export default function ExportView() {
 
   const handleExportVideo = async () => {
     if (!videoFile) return
+
+    // 配音已开启但音轨未合成时，导出按钮处于禁用状态（显示「请先合成配音」），不会走到这里
 
     setExporting(true)
     setError('')
@@ -212,20 +277,20 @@ export default function ExportView() {
     abortControllerRef.current?.abort()
   }
 
-  const handleDownloadSRT = (lang: 'en' | 'original' | 'both') => {
+  const handleDownloadSRT = (lang: SubtitleLang) => {
     const baseName = videoFile?.name.replace(/\.[^.]+$/, '') || 'subtitles'
-    const suffix = lang === 'both' ? '' : `_${lang}`
+    const suffix = lang === 'zh-en' ? '' : `_${lang}`
     downloadFile(generateSRT(subtitles, lang), `${baseName}${suffix}.srt`)
   }
 
-  const handleDownloadVTT = (lang: 'en' | 'original' | 'both') => {
+  const handleDownloadVTT = (lang: SubtitleLang) => {
     const baseName = videoFile?.name.replace(/\.[^.]+$/, '') || 'subtitles'
-    const suffix = lang === 'both' ? '' : `_${lang}`
+    const suffix = lang === 'zh-en' ? '' : `_${lang}`
     downloadFile(generateVTT(subtitles, lang), `${baseName}${suffix}.vtt`)
   }
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4 max-w-7xl mx-auto w-full">
+    <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4 p-4 max-w-7xl mx-auto w-full overflow-y-auto">
       {/* 左侧：预览 */}
       <div className="flex-1 min-w-0">
         <VideoPlayer />
@@ -260,22 +325,33 @@ export default function ExportView() {
 
           {/* 配音设置 */}
           <div className="rounded-lg border border-slate-200 p-3 space-y-2">
-            <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setVoiceOverEnabled(!voiceOverEnabled)}
+              className="flex w-full items-center justify-between"
+            >
               <span className="text-sm text-slate-700">英文配音</span>
-              <button
-                type="button"
-                onClick={() => setVoiceOverEnabled(!voiceOverEnabled)}
-                className={`relative h-6 w-11 rounded-full transition-colors ${
-                  voiceOverEnabled ? 'bg-blue-600' : 'bg-slate-300'
-                }`}
-              >
+              <span className="flex items-center gap-2">
                 <span
-                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                    voiceOverEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                  className={`text-xs font-medium ${
+                    voiceOverEnabled ? 'text-blue-600' : 'text-slate-400'
                   }`}
-                />
-              </button>
-            </div>
+                >
+                  {voiceOverEnabled ? '已开启' : '已关闭'}
+                </span>
+                <span
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    voiceOverEnabled ? 'bg-blue-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                      voiceOverEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </span>
+              </span>
+            </button>
 
             {voiceOverEnabled && (
               <div className="space-y-2">
@@ -314,6 +390,11 @@ export default function ExportView() {
                       melotts 免费引擎，成功率约 40%，失败片段自动静音
                     </p>
                   )}
+                  {ttsConfig.engine === 'free' && speakers.length > 1 && (
+                    <p className="text-xs text-amber-600">
+                      免费引擎只支持单一音色，多人配音请配置火山引擎
+                    </p>
+                  )}
                 </div>
 
                 {/* 火山引擎配置 */}
@@ -350,19 +431,125 @@ export default function ExportView() {
                         className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-slate-500">音色 ID（选填）</label>
-                      <input
-                        type="text"
-                        value={ttsConfig.voiceType}
-                        onChange={(e) => updateTtsConfig({ voiceType: e.target.value })}
-                        placeholder="如 zh_female_wanwanxiaohe_moon_bigtts"
-                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
-                      />
-                      <p className="text-xs text-slate-400">
-                        在控制台开通音色后复制音色 ID，留空使用默认女声
-                      </p>
-                    </div>
+                    {/* 音色：多位说话人时逐人选择，否则维持单一音色输入 */}
+                    {speakers.length > 1 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-slate-500">
+                          检测到 {speakers.length} 位说话人，为每位选择音色：
+                        </p>
+                        {speakers.map((sp, idx) => (
+                          <div key={sp.id} className="space-y-1">
+                            <label className="text-xs text-slate-500">
+                              说话人 {idx + 1}
+                            </label>
+                            {customVoiceMode[sp.id] ? (
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="text"
+                                  value={sp.voiceType}
+                                  onChange={(e) =>
+                                    setSpeakerVoice(sp.id, e.target.value)
+                                  }
+                                  placeholder="自定义音色 ID"
+                                  className="flex-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCustomVoiceMode((prev) => ({
+                                      ...prev,
+                                      [sp.id]: false,
+                                    }))
+                                  }
+                                  className="flex-shrink-0 rounded border border-slate-200 bg-white px-2 text-xs text-slate-500 hover:text-slate-700"
+                                >
+                                  预置
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-1.5">
+                                <select
+                                  value={
+                                    VOICE_PRESETS.some(
+                                      (p) => p.id === sp.voiceType
+                                    )
+                                      ? sp.voiceType
+                                      : ''
+                                  }
+                                  onChange={(e) => {
+                                    if (e.target.value === '__custom__') {
+                                      setCustomVoiceMode((prev) => ({
+                                        ...prev,
+                                        [sp.id]: true,
+                                      }))
+                                      setSpeakerVoice(sp.id, '')
+                                    } else {
+                                      setSpeakerVoice(sp.id, e.target.value)
+                                    }
+                                  }}
+                                  className="flex-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
+                                >
+                                  <option value="">默认女声</option>
+                                  {VOICE_PRESETS.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.label}
+                                    </option>
+                                  ))}
+                                  <option value="__custom__">自定义...</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handlePreviewVoice(sp.voiceType, String(sp.id))
+                                  }
+                                  disabled={
+                                    !ttsConfig.apiKey ||
+                                    previewingVoice !== null
+                                  }
+                                  className="flex-shrink-0 rounded border border-slate-200 bg-white px-2 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {previewingVoice === String(sp.id)
+                                    ? '…'
+                                    : '试听'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <p className="text-xs text-slate-400">
+                          留空的使用默认女声；预置音色需在控制台开通
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <label className="text-xs text-slate-500">音色 ID（选填）</label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={ttsConfig.voiceType}
+                            onChange={(e) => updateTtsConfig({ voiceType: e.target.value })}
+                            placeholder="如 zh_female_vv_uranus_bigtts"
+                            className="flex-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handlePreviewVoice(ttsConfig.voiceType, 'single')
+                            }
+                            disabled={!ttsConfig.apiKey || previewingVoice !== null}
+                            className="flex-shrink-0 rounded border border-slate-200 bg-white px-2 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {previewingVoice === 'single' ? '…' : '试听'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          留空使用默认女声（Vivi 2.0）；注意需为 seed-tts-2.0 音色（uranus_bigtts 系列）
+                        </p>
+                      </div>
+                    )}
+                    {previewError && (
+                      <p className="text-xs text-red-600">试听失败：{previewError}</p>
+                    )}
                   </div>
                 )}
 
@@ -515,12 +702,18 @@ export default function ExportView() {
           {/* SRT */}
           <div className="space-y-1.5">
             <p className="text-xs text-slate-500 font-medium">SRT 格式</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <button
-                onClick={() => handleDownloadSRT('both')}
+                onClick={() => handleDownloadSRT('zh-en')}
                 className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
-                双语
+                中英双语
+              </button>
+              <button
+                onClick={() => handleDownloadSRT('zh')}
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
+              >
+                中文
               </button>
               <button
                 onClick={() => handleDownloadSRT('en')}
@@ -540,12 +733,18 @@ export default function ExportView() {
           {/* VTT */}
           <div className="space-y-1.5">
             <p className="text-xs text-slate-500 font-medium">VTT 格式</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <button
-                onClick={() => handleDownloadVTT('both')}
+                onClick={() => handleDownloadVTT('zh-en')}
                 className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
               >
-                双语
+                中英双语
+              </button>
+              <button
+                onClick={() => handleDownloadVTT('zh')}
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 text-xs font-medium transition-colors"
+              >
+                中文
               </button>
               <button
                 onClick={() => handleDownloadVTT('en')}

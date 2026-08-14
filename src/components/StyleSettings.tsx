@@ -11,6 +11,16 @@ export default function StyleSettings() {
         <label className="text-xs text-slate-500">显示语言</label>
         <div className="flex gap-2">
           <button
+            onClick={() => updateSettings({ showZh: !settings.showZh })}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              settings.showZh
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-500'
+            }`}
+          >
+            中文
+          </button>
+          <button
             onClick={() => updateSettings({ showEn: !settings.showEn })}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
               settings.showEn
@@ -35,6 +45,16 @@ export default function StyleSettings() {
 
       {/* 颜色选择 */}
       <div className="space-y-2">
+        {settings.showZh && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-700">中文颜色</span>
+            <input
+              type="color"
+              value={settings.zhColor}
+              onChange={(e) => updateSettings({ zhColor: e.target.value })}
+            />
+          </div>
+        )}
         {settings.showEn && (
           <div className="flex items-center justify-between">
             <span className="text-sm text-slate-700">英文颜色</span>

@@ -29,6 +29,10 @@ export default function SubtitleList() {
     updateSubtitle(id, { textEn: value })
   }
 
+  const handleZhChange = (id: number, value: string) => {
+    updateSubtitle(id, { textZh: value })
+  }
+
   const handleOriginalChange = (id: number, value: string) => {
     updateSubtitle(id, { textOriginal: value })
   }
@@ -66,6 +70,12 @@ export default function SubtitleList() {
             <span className="text-xs text-slate-500 font-mono">
               {formatTime(sub.end)}
             </span>
+            {/* 多说话人检测标记 */}
+            {sub.speaker !== undefined && (
+              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-600">
+                说话人{sub.speaker + 1}
+              </span>
+            )}
           </div>
 
           {/* 英文字幕 */}
@@ -84,8 +94,18 @@ export default function SubtitleList() {
             value={sub.textOriginal}
             onChange={(e) => handleOriginalChange(sub.id, e.target.value)}
             onFocus={() => handleFocus(sub)}
-            className="w-full bg-transparent text-sm text-amber-700 outline-none placeholder:text-slate-400"
+            className="w-full bg-transparent text-sm text-amber-700 outline-none mb-1 placeholder:text-slate-400"
             placeholder="原文字幕"
+          />
+
+          {/* 中文字幕 */}
+          <input
+            type="text"
+            value={sub.textZh}
+            onChange={(e) => handleZhChange(sub.id, e.target.value)}
+            onFocus={() => handleFocus(sub)}
+            className="w-full bg-transparent text-sm text-sky-700 outline-none placeholder:text-slate-400"
+            placeholder="中文字幕"
           />
         </div>
       ))}
