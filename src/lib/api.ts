@@ -305,10 +305,15 @@ export async function callTranslate(
  * Cloudflare Pages Functions 有网关超时限制（约 100 秒），
  * Workers AI GLM 模型偶尔响应较慢会触发 524。
  * 自动重试 2 次，每次间隔递增。
+ *
+ * 拿到结果后检测空条目：
+ * - 部分空：递归补翻一次（后端已有补翻，这里作双重兜底）
+ * - 全部空：视为失败抛出，触发外层整批重试
  */
 async function callTranslateBatchWithRetry(
   config: ApiConfig,
-  texts: string[]
+  texts: string[],
+  depth = 0
 ): Promise<string[]> {
   let lastError: Error | null = null
 
@@ -331,7 +336,33 @@ async function callTranslateBatchWithRetry(
       }
 
       const data = (await response.json()) as TranslateResponse
-      return data.translations
+      const translations = [...data.translations]
+
+      // 检测空条目：全空视为失败（模型输出异常），部分空做一次补翻兑底
+      const emptyIdx = translations
+        .map((t, i) => (!t || !t.trim() ? i : -1))
+        .filter((i) => i >= 0)
+      if (emptyIdx.length === texts.length) {
+        throw new Error('翻译结果为空，模型输出异常')
+      }
+      if (emptyIdx.length > 0 && depth < 1) {
+        const emptyTexts = emptyIdx.map((i) => texts[i])
+        try {
+          const refill = await callTranslateBatchWithRetry(
+            config,
+            emptyTexts,
+            depth + 1
+          )
+          emptyIdx.forEach((globalIdx, j) => {
+            const t = refill[j]
+            if (t && t.trim()) translations[globalIdx] = t
+          })
+        } catch {
+          // 补翻失败不阻塞，保留原结果
+        }
+      }
+
+      return translations
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
       // 额度用尽类错误不重试
