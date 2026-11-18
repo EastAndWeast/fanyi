@@ -146,7 +146,11 @@ async function processSTTChunk(
 
       return (await response.json()) as STTResponse
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err))
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        lastError = new Error('网络连接失败，无法连接语音识别服务，请检查网络后重试')
+      } else {
+        lastError = err instanceof Error ? err : new Error(String(err))
+      }
       if (retry < STT_MAX_RETRIES) {
         await new Promise((r) => setTimeout(r, 1000 * (retry + 1)))
       }
@@ -358,7 +362,11 @@ async function callTranslateBatchWithRetry(
 
       return translations
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err))
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        lastError = new Error('网络连接失败，无法连接翻译服务，请检查网络后重试')
+      } else {
+        lastError = err instanceof Error ? err : new Error(String(err))
+      }
       // 额度用尽类错误不重试
       if (lastError.message.includes('额度已用完')) {
         throw lastError

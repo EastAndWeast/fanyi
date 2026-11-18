@@ -27,21 +27,21 @@ interface FFmpegInstance {
 let ffmpegInstance: FFmpegInstance | null = null
 let loadingPromise: Promise<FFmpegInstance> | null = null
 
-// FFmpeg.wasm 核心文件使用 jsdelivr CDN（支持 CORS:* + CORP:cross-origin，可配合 COEP 使用）
-// 不本地托管是因为 ffmpeg-core.wasm (32MB) 超过 Cloudflare Pages 25MB 单文件限制
-// 注意: jsdelivr 对 scoped 包带版本号的 URL 解析有 bug（返回 400），
-// 必须省略版本号，CDN 会自动解析到 latest（当前为 0.12.10）
-//
-// 双核心策略：
-// - 单线程核心 @ffmpeg/core：不依赖 SharedArrayBuffer，手机/微信/国产浏览器等
-//   无法跨域隔离的环境也能用，但速度较慢
-// - 多线程核心 @ffmpeg/core-mt：需要 SharedArrayBuffer（跨域隔离），电脑端可用，速度快
-//   额外需要 workerURL（pthread worker）
-const ST_CORE_JS_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core/dist/umd/ffmpeg-core.js'
-const ST_CORE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core/dist/umd/ffmpeg-core.wasm'
-const MT_CORE_JS_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt/dist/umd/ffmpeg-core.js'
-const MT_CORE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt/dist/umd/ffmpeg-core.wasm'
-const MT_CORE_WORKER_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt/dist/umd/ffmpeg-core.worker.js'
+// FFmpeg.wasm 单线程核心同域分片托管（public/ffmpeg/）：
+// Cloudflare Pages 单文件限制 25MB，而 ffmpeg-core.wasm 约 31MB，
+// 因此拆分为两个 ~15.4MB 分片随静态资源同域部署，彻底摆脱国内访问外部 CDN 不稳定的问题。
+const ST_LOCAL_JS_URL = '/ffmpeg/ffmpeg-core.js'
+const ST_LOCAL_WASM_PARTS = [
+  '/ffmpeg/ffmpeg-core.wasm.part0',
+  '/ffmpeg/ffmpeg-core.wasm.part1',
+]
+
+// 多线程核心 @ffmpeg/core-mt（仅在支持 SharedArrayBuffer + 跨域隔离时尝试，失败自动降级到本地单线程）
+const MT_CDN_BASES = [
+  'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt/dist/umd',
+  'https://fastly.jsdelivr.net/npm/@ffmpeg/core-mt/dist/umd',
+  'https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/umd',
+]
 
 /**
  * 判断当前环境能否使用多线程核心。
@@ -64,16 +64,80 @@ export function getFFmpegMode(): 'multi-thread' | 'single-thread' {
 }
 
 /**
- * 将 URL 转为 Blob URL（获取跨域资源并转为同源 Blob，绕过 COEP 限制）
- * 参考官方 @ffmpeg/util 的 toBlobURL 实现
+ * 带重试的二进制拉取（应对弱网/偶发断连）
+ */
+async function fetchBufferWithRetry(url: string, retries = 2): Promise<ArrayBuffer> {
+  let lastError: unknown
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const resp = await fetch(url)
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} (${url})`)
+      }
+      return await resp.arrayBuffer()
+    } catch (err) {
+      lastError = err
+      if (i < retries) {
+        await new Promise((r) => setTimeout(r, 800 * (i + 1)))
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
+/**
+ * 将 URL 转为 Blob URL（获取资源并转为同源 Blob，绕过 COEP 限制）
  */
 async function toBlobURL(url: string, mimeType: string): Promise<string> {
-  const resp = await fetch(url)
-  if (!resp.ok) {
-    throw new Error(`Failed to fetch ${url}: ${resp.status}`)
-  }
-  const blob = new Blob([await resp.arrayBuffer()], { type: mimeType })
+  const buf = await fetchBufferWithRetry(url)
+  const blob = new Blob([buf], { type: mimeType })
   return URL.createObjectURL(blob)
+}
+
+/**
+ * 并行拉取多个分片并在内存中拼接为一个 Blob URL
+ */
+async function partsToBlobURL(urls: string[], mimeType: string): Promise<string> {
+  const buffers = await Promise.all(urls.map((u) => fetchBufferWithRetry(u)))
+  const blob = new Blob(buffers, { type: mimeType })
+  return URL.createObjectURL(blob)
+}
+
+/**
+ * 加载本地同域单线程核心配置
+ */
+async function loadLocalSingleThreadOpts(): Promise<{
+  coreURL: string
+  wasmURL: string
+}> {
+  const [coreURL, wasmURL] = await Promise.all([
+    toBlobURL(ST_LOCAL_JS_URL, 'text/javascript'),
+    partsToBlobURL(ST_LOCAL_WASM_PARTS, 'application/wasm'),
+  ])
+  return { coreURL, wasmURL }
+}
+
+/**
+ * 尝试从多个 CDN 加载多线程核心，全部失败则返回 null（由调用方降级到本地单线程）
+ */
+async function tryLoadMultiThreadOpts(): Promise<{
+  coreURL: string
+  wasmURL: string
+  workerURL: string
+} | null> {
+  for (const base of MT_CDN_BASES) {
+    try {
+      const [coreURL, wasmURL, workerURL] = await Promise.all([
+        toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+        toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        toBlobURL(`${base}/ffmpeg-core.worker.js`, 'text/javascript'),
+      ])
+      return { coreURL, wasmURL, workerURL }
+    } catch (err) {
+      console.warn(`[FFmpeg] 多线程核心 CDN 加载失败 (${base}):`, err)
+    }
+  }
+  return null
 }
 
 /**
@@ -98,37 +162,35 @@ async function getFFmpeg(): Promise<FFmpegInstance> {
 
   loadingPromise = (async () => {
     if (!window.FFmpegWASM?.FFmpeg) {
-      throw new Error('FFmpeg UMD 脚本未加载')
+      throw new Error('FFmpeg 脚本未加载，请刷新页面重试')
     }
 
     const ff = new window.FFmpegWASM.FFmpeg()
 
-    const useMT = canUseMultiThread()
+    try {
+      let loadOpts: {
+        coreURL: string
+        wasmURL: string
+        workerURL?: string
+      } | null = null
 
-    const loadOpts: {
-      coreURL: string
-      wasmURL: string
-      workerURL?: string
-    } = {
-      coreURL: await toBlobURL(
-        useMT ? MT_CORE_JS_URL : ST_CORE_JS_URL,
-        'text/javascript'
-      ),
-      wasmURL: await toBlobURL(
-        useMT ? MT_CORE_WASM_URL : ST_CORE_WASM_URL,
-        'application/wasm'
-      ),
+      if (canUseMultiThread()) {
+        loadOpts = await tryLoadMultiThreadOpts()
+      }
+
+      if (!loadOpts) {
+        loadOpts = await loadLocalSingleThreadOpts()
+      }
+
+      await ff.load(loadOpts)
+      ffmpegInstance = ff
+      return ff
+    } catch (err) {
+      // 加载失败时重置 loadingPromise，确保点击「重试」可以重新发起加载
+      loadingPromise = null
+      const detail = err instanceof Error ? err.message : String(err)
+      throw new Error(`音视频处理组件加载失败，请检查网络后重试（${detail}）`)
     }
-
-    // 多线程核心额外需要 pthread worker
-    if (useMT) {
-      loadOpts.workerURL = await toBlobURL(MT_CORE_WORKER_URL, 'text/javascript')
-    }
-
-    await ff.load(loadOpts)
-
-    ffmpegInstance = ff
-    return ff
   })()
 
   return loadingPromise
