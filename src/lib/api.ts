@@ -238,12 +238,12 @@ export function normalizeEndpoint(endpoint: string): string {
   return url
 }
 
-// 每批翻译的最大条数：Workers AI GLM 模型 max_tokens 有限（4096），
-// 一次性翻译过多条会导致 JSON 输出截断，所有翻译变空。
-// 从 40 降到 20：批次过大会增加 GLM 推理时间，触发 Cloudflare 524 超时
-const TRANSLATE_BATCH_SIZE = 20
+// 每批翻译的最大条数：控制单批条数以降低 Workers AI 推理耗时，避免触发 Cloudflare 524 超时
+const TRANSLATE_BATCH_SIZE = 8
 const TRANSLATE_MAX_RETRIES = 2
-// 翻译并发数：3 路可将 8 批的翻译时间从 ~5 分钟降到 ~2 分钟
+// 单批翻译前端超时（毫秒）：配合后端 28s 硬超时，防止挂起等待 125s 才返回 524
+const TRANSLATE_TIMEOUT_MS = 35_000
+// 翻译并发数：3 路可将多批翻译时间大幅缩短
 const TRANSLATE_CONCURRENCY = 3
 
 /**
@@ -316,10 +316,13 @@ async function callTranslateBatchWithRetry(
   let lastError: Error | null = null
 
   for (let retry = 0; retry <= TRANSLATE_MAX_RETRIES; retry++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TRANSLATE_TIMEOUT_MS)
     try {
       const response = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           endpoint: normalizeEndpoint(config.endpoint),
           apiKey: config.apiKey,
@@ -362,7 +365,9 @@ async function callTranslateBatchWithRetry(
 
       return translations
     } catch (err) {
-      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        lastError = new Error('翻译请求超时，请稍后重试')
+      } else if (err instanceof TypeError && err.message === 'Failed to fetch') {
         lastError = new Error('网络连接失败，无法连接翻译服务，请检查网络后重试')
       } else {
         lastError = err instanceof Error ? err : new Error(String(err))
@@ -374,6 +379,8 @@ async function callTranslateBatchWithRetry(
       if (retry < TRANSLATE_MAX_RETRIES) {
         await new Promise((r) => setTimeout(r, 2000 * (retry + 1)))
       }
+    } finally {
+      clearTimeout(timer)
     }
   }
 

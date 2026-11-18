@@ -17,6 +17,8 @@ interface TranslateRequest {
 // 注意：llama-3.1-8b-instruct 已于 2026-05-30 被弃用（错误码 5028），
 // GLM 是官方推荐替代品，且中文原生，英译中质量更好
 const BUILTIN_MODEL = '@cf/zai-org/glm-4.7-flash'
+// 单次 Workers AI 调用硬超时（毫秒）：避免单次推理卡死触发 Cloudflare 100s 网关 524 超时
+const BUILTIN_TIMEOUT_MS = 28_000
 
 // 内置额度用尽时的提示文案
 const QUOTA_EXCEEDED_MESSAGE =
@@ -77,19 +79,37 @@ function isQuotaError(message: string): boolean {
   return /quota|limit|exceed|capacity|rate|429|3040/i.test(message)
 }
 
-// 单次调用 Workers AI 翻译（返回原始 translations，可能含空条目）
+// 单次调用 Workers AI 翻译（含硬超时，返回原始 translations，可能含空条目）
 async function runBuiltinAI(env: Env, numberedTexts: string, count: number): Promise<string[]> {
-  // 新模型可能返回 OpenAI 兼容格式（choices）或老式格式（response）
-  const result = (await env.AI.run(BUILTIN_MODEL as Parameters<Ai['run']>[0], {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const aiPromise = env.AI.run(BUILTIN_MODEL as Parameters<Ai['run']>[0], {
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: numberedTexts },
     ],
     temperature: 0.3,
-    max_tokens: 4096,
-  })) as {
+    // 限制 max_tokens 为 1024，防止推理模型在单批字幕上耗时过长
+    max_tokens: 1024,
+  }) as Promise<{
     response?: string
     choices?: { message?: { content?: string } }[]
+  }>
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('内置翻译模型响应超时')),
+      BUILTIN_TIMEOUT_MS
+    )
+  })
+
+  let result: {
+    response?: string
+    choices?: { message?: { content?: string } }[]
+  }
+  try {
+    result = await Promise.race([aiPromise, timeoutPromise])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 
   const content =
@@ -174,13 +194,19 @@ async function translateWithBuiltinAI(
     )
   }
 
-  // 补翻漏掉的条目（小批重试，最多 2 轮）
-  const finalTranslations = await fillEmptyTranslations(
-    (subTexts, numbered) => runBuiltinAI(env, numbered, subTexts.length),
-    texts,
-    translations
-  )
-  return Response.json({ translations: finalTranslations, source: 'builtin' })
+  // 仅在部分条目为空时做 1 轮快速补翻（全空时直接返回，由前端重试整批，避免同请求内反复耗时触发 524）
+  const empties = emptyIndexesOf(translations)
+  if (empties.length > 0 && empties.length < texts.length) {
+    const finalTranslations = await fillEmptyTranslations(
+      (subTexts, numbered) => runBuiltinAI(env, numbered, subTexts.length),
+      texts,
+      translations,
+      1
+    )
+    return Response.json({ translations: finalTranslations, source: 'builtin' })
+  }
+
+  return Response.json({ translations, source: 'builtin' })
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
