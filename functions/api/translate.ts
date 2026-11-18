@@ -17,6 +17,7 @@ interface TranslateRequest {
 // 注意：llama-3.1-8b-instruct 已于 2026-05-30 被弃用（错误码 5028），
 // GLM 是官方推荐替代品，且中文原生，英译中质量更好
 const BUILTIN_MODEL = '@cf/zai-org/glm-4.7-flash'
+const FALLBACK_TRANSLATE_MODEL = '@cf/meta/m2m100-1.2b'
 // 单次 Workers AI 调用硬超时（毫秒）：避免单次推理卡死触发 Cloudflare 100s 网关 524 超时
 const BUILTIN_TIMEOUT_MS = 28_000
 
@@ -88,9 +89,10 @@ async function runBuiltinAI(env: Env, numberedTexts: string, count: number): Pro
       { role: 'user', content: numberedTexts },
     ],
     temperature: 0.3,
-    // 限制 max_tokens 为 1024，防止推理模型在单批字幕上耗时过长
-    max_tokens: 1024,
-  }) as Promise<{
+    // 关闭 thinking 推理模式，避免推理 token 占满预算导致 content 为空或耗时过长
+    max_tokens: 2048,
+    chat_template_kwargs: { enable_thinking: false },
+  } as Record<string, unknown>) as Promise<{
     response?: string
     choices?: { message?: { content?: string } }[]
   }>
@@ -168,42 +170,70 @@ async function fillEmptyTranslations(
   return current
 }
 
-// 内置免费翻译：调用 Workers AI，无需用户提供 Key
+// 兜底翻译模型：使用 Workers AI 专用翻译模型 @cf/meta/m2m100-1.2b 并行逐条翻译（速度极快，无推理延迟）
+async function translateWithM2M100(env: Env, texts: string[]): Promise<string[]> {
+  return Promise.all(
+    texts.map(async (text) => {
+      const trimmed = text.trim()
+      if (!trimmed) return ''
+      try {
+        const res = (await env.AI.run(
+          FALLBACK_TRANSLATE_MODEL as Parameters<Ai['run']>[0],
+          {
+            text: trimmed,
+            source_lang: 'en',
+            target_lang: 'zh',
+          }
+        )) as { translated_text?: string }
+        return res.translated_text?.trim() || ''
+      } catch (err) {
+        console.warn('[Translate] M2M100 fallback item failed:', err)
+        return ''
+      }
+    })
+  )
+}
+
+// 内置免费翻译：优先使用 GLM（关闭 thinking），失败或漏翻条目自动用 M2M100 兜底
 async function translateWithBuiltinAI(
   env: Env,
   texts: string[],
   numberedTexts: string
 ): Promise<Response> {
-  let translations: string[]
+  let translations: string[] = new Array(texts.length).fill('')
   try {
     translations = await runBuiltinAI(env, numberedTexts, texts.length)
   } catch (aiError) {
     const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
-    console.error('[Translate] Workers AI error:', errMsg)
+    console.error('[Translate] Workers AI GLM error:', errMsg)
     if (isQuotaError(errMsg)) {
       return Response.json(
         { error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true },
         { status: 429 }
       )
     }
+    // 非额度错误时继续走下方 M2M100 兜底，不直接失败
+  }
+
+  // 对空条目使用 M2M100 快速兜底补翻
+  const empties = emptyIndexesOf(translations)
+  if (empties.length > 0) {
+    const emptyTexts = empties.map((i) => texts[i])
+    const fallbackResults = await translateWithM2M100(env, emptyTexts)
+    empties.forEach((globalIdx, j) => {
+      if (fallbackResults[j]) {
+        translations[globalIdx] = fallbackResults[j]
+      }
+    })
+  }
+
+  if (emptyIndexesOf(translations).length === texts.length) {
     return Response.json(
-      { error: `内置翻译服务暂时不可用，请稍后重试或配置自己的 API Key（${errMsg}）` },
+      { error: '内置翻译服务暂时不可用，请稍后重试或配置自己的 API Key' },
       // 注意：不能用 502/504，Cloudflare 代理域名会拦截这两个状态码
       // 并替换响应 body，导致前端拿不到真实错误信息
       { status: 500 }
     )
-  }
-
-  // 仅在部分条目为空时做 1 轮快速补翻（全空时直接返回，由前端重试整批，避免同请求内反复耗时触发 524）
-  const empties = emptyIndexesOf(translations)
-  if (empties.length > 0 && empties.length < texts.length) {
-    const finalTranslations = await fillEmptyTranslations(
-      (subTexts, numbered) => runBuiltinAI(env, numbered, subTexts.length),
-      texts,
-      translations,
-      1
-    )
-    return Response.json({ translations: finalTranslations, source: 'builtin' })
   }
 
   return Response.json({ translations, source: 'builtin' })
