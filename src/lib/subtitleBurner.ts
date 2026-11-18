@@ -55,6 +55,50 @@ function getVideoBitrate(w: number, h: number): number {
 }
 
 /**
+ * 将文本按最大像素宽度自动换行（同时支持英文按词换行与中文按字换行）
+ */
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string[] {
+  const result: string[] = []
+  const words = text.split(' ')
+  let currentLine = ''
+
+  const pushCharByChar = (segment: string) => {
+    for (const ch of Array.from(segment)) {
+      const test = currentLine + ch
+      if (ctx.measureText(test).width > maxWidth && currentLine) {
+        result.push(currentLine)
+        currentLine = ch
+      } else {
+        currentLine = test
+      }
+    }
+  }
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width <= maxWidth) {
+      currentLine = testLine
+    } else if (ctx.measureText(word).width > maxWidth) {
+      // 单个词/中文句超宽，先输出已有行，再逐字切分
+      if (currentLine) {
+        result.push(currentLine)
+        currentLine = ''
+      }
+      pushCharByChar(word)
+    } else {
+      if (currentLine) result.push(currentLine)
+      currentLine = word
+    }
+  }
+  if (currentLine) result.push(currentLine)
+  return result
+}
+
+/**
  * 在 Canvas 上绘制字幕
  */
 function drawSubtitle(
@@ -72,41 +116,41 @@ function drawSubtitle(
 
   const w = canvas.width
   const h = canvas.height
-  const fontSize = Math.round(settings.fontSize * (h / 480))
+  // 竖屏视频以较短边为基准缩放字号，避免字号过大溢出画面
+  const scaleBase = Math.min(h, w * 1.35)
+  const fontSize = Math.round(settings.fontSize * (scaleBase / 480))
   const padding = Math.round(fontSize * 0.4)
+  const maxWidthLine = w * 0.86
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  // 计算所有需要绘制的文本行
-  const lines: { text: string; color: string; size: number }[] = []
+  // 先完成自动换行，再精确计算整体宽高
+  const wrappedLines: { text: string; color: string; size: number }[] = []
   for (const sub of currentSubs) {
     if (settings.showZh && sub.textZh) {
-      lines.push({
-        text: sub.textZh,
-        color: settings.zhColor,
-        size: fontSize,
-      })
+      ctx.font = `600 ${fontSize}px sans-serif`
+      for (const dl of wrapText(ctx, sub.textZh, maxWidthLine)) {
+        wrappedLines.push({ text: dl, color: settings.zhColor, size: fontSize })
+      }
     }
     if (settings.showEn && sub.textEn) {
-      lines.push({
-        text: sub.textEn,
-        color: settings.enColor,
-        size: fontSize - 4,
-      })
+      const enSize = Math.max(12, fontSize - 4)
+      ctx.font = `600 ${enSize}px sans-serif`
+      for (const dl of wrapText(ctx, sub.textEn, maxWidthLine)) {
+        wrappedLines.push({ text: dl, color: settings.enColor, size: enSize })
+      }
     }
   }
 
-  if (lines.length === 0) return
+  if (wrappedLines.length === 0) return
 
-  // 计算文本块的总高度
   let totalHeight = 0
   let maxWidth = 0
-  for (const line of lines) {
+  for (const line of wrappedLines) {
     ctx.font = `600 ${line.size}px sans-serif`
     const metrics = ctx.measureText(line.text)
-    const lineW = Math.min(metrics.width, w * 0.9)
-    maxWidth = Math.max(maxWidth, lineW)
+    maxWidth = Math.max(maxWidth, Math.min(metrics.width, maxWidthLine))
     totalHeight += line.size + padding * 0.5
   }
 
@@ -130,38 +174,17 @@ function drawSubtitle(
   }
 
   // 逐行绘制文本
-  let currentY = y - totalHeight / 2 + lines[0].size / 2
-  for (const line of lines) {
+  let currentY = y - totalHeight / 2 + wrappedLines[0].size / 2
+  for (const line of wrappedLines) {
     ctx.font = `600 ${line.size}px sans-serif`
-
-    // 描边（增强可读性）
     ctx.strokeStyle = 'rgba(0,0,0,0.8)'
     ctx.lineWidth = Math.max(2, line.size / 12)
     ctx.lineJoin = 'round'
 
-    // 自动换行
-    const maxWidthLine = w * 0.9
-    const words = line.text.split(' ')
-    const drawLines: string[] = []
-    let currentLine = ''
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word
-      if (ctx.measureText(testLine).width > maxWidthLine && currentLine) {
-        drawLines.push(currentLine)
-        currentLine = word
-      } else {
-        currentLine = testLine
-      }
-    }
-    if (currentLine) drawLines.push(currentLine)
-
-    for (const dl of drawLines) {
-      ctx.strokeText(dl, w / 2, currentY)
-      ctx.fillStyle = line.color
-      ctx.fillText(dl, w / 2, currentY)
-      currentY += line.size + padding * 0.5
-    }
+    ctx.strokeText(line.text, w / 2, currentY)
+    ctx.fillStyle = line.color
+    ctx.fillText(line.text, w / 2, currentY)
+    currentY += line.size + padding * 0.5
   }
 }
 

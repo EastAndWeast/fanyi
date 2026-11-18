@@ -122,6 +122,8 @@ async function processSTTChunk(
   let lastError: Error | null = null
 
   for (let retry = 0; retry <= STT_MAX_RETRIES; retry++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 45_000)
     try {
       const formData = new FormData()
       const blob = new Blob([chunk], { type: 'audio/wav' })
@@ -130,6 +132,7 @@ async function processSTTChunk(
       const response = await fetch('/api/stt', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       })
 
       // 422 = "未能识别到语音内容"：该块可能为纯音乐/背景音/静音，
@@ -146,7 +149,9 @@ async function processSTTChunk(
 
       return (await response.json()) as STTResponse
     } catch (err) {
-      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        lastError = new Error('语音识别请求超时，请检查网络后重试')
+      } else if (err instanceof TypeError && err.message === 'Failed to fetch') {
         lastError = new Error('网络连接失败，无法连接语音识别服务，请检查网络后重试')
       } else {
         lastError = err instanceof Error ? err : new Error(String(err))
@@ -154,6 +159,8 @@ async function processSTTChunk(
       if (retry < STT_MAX_RETRIES) {
         await new Promise((r) => setTimeout(r, 1000 * (retry + 1)))
       }
+    } finally {
+      clearTimeout(timer)
     }
   }
 

@@ -32,6 +32,7 @@ export default function ProcessingView() {
 
   const [stage, setStage] = useState<ProcessingStage>('idle')
   const [error, setError] = useState('')
+  const [extractLog, setExtractLog] = useState('')
   const [sttProgress, setSttProgress] = useState<{
     completed: number
     total: number
@@ -44,7 +45,8 @@ export default function ProcessingView() {
 
   // 纯音频模式下，「提取音频」实际是转码为 WAV，文案需相应调整
   const extractingDesc =
-    mediaKind === 'audio' ? '正在转换音频格式...' : '正在从视频中提取音频...'
+    extractLog ||
+    (mediaKind === 'audio' ? '正在转换音频格式...' : '正在从视频中提取音频...')
 
   // 语音识别进度文案：多块时显示 "识别中 3/20..."
   const transcribingDesc =
@@ -70,9 +72,11 @@ export default function ProcessingView() {
     try {
       // 步骤1: 提取音频
       setStage('extracting')
-      const audioWav = await extractAudio(videoFile, (msg) =>
+      setExtractLog('')
+      const audioWav = await extractAudio(videoFile, (msg) => {
         console.log(msg)
-      )
+        setExtractLog(msg)
+      })
 
       // 步骤2: 语音识别（前端分块逐块发送，避免长音频触发 524 超时）
       setStage('transcribing')

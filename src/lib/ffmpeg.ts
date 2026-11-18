@@ -66,20 +66,27 @@ export function getFFmpegMode(): 'multi-thread' | 'single-thread' {
 /**
  * 带重试的二进制拉取（应对弱网/偶发断连）
  */
-async function fetchBufferWithRetry(url: string, retries = 2): Promise<ArrayBuffer> {
+async function fetchBufferWithRetry(url: string, retries = 2, timeoutMs = 60_000): Promise<ArrayBuffer> {
   let lastError: unknown
   for (let i = 0; i <= retries; i++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const resp = await fetch(url)
+      const resp = await fetch(url, { signal: controller.signal })
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status} (${url})`)
       }
       return await resp.arrayBuffer()
     } catch (err) {
-      lastError = err
+      lastError =
+        err instanceof DOMException && err.name === 'AbortError'
+          ? new Error(`下载超时 (${url})`)
+          : err
       if (i < retries) {
         await new Promise((r) => setTimeout(r, 800 * (i + 1)))
       }
+    } finally {
+      clearTimeout(timer)
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
@@ -203,6 +210,7 @@ export async function extractAudio(
   videoFile: File,
   onLog?: (message: string) => void
 ): Promise<ArrayBuffer> {
+  onLog?.('正在加载音视频组件（首次约需几十秒）...')
   const ff = await getFFmpeg()
 
   const inputName = 'input_video'
