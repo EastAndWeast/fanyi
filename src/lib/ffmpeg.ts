@@ -204,12 +204,88 @@ async function getFFmpeg(): Promise<FFmpegInstance> {
 }
 
 /**
+ * 将 Float32 PCM 声道数据编码为 16kHz 单声道 16-bit WAV
+ */
+function encodeWav16kMono(samples: Float32Array, sampleRate = 16000): ArrayBuffer {
+  const dataLength = samples.length * 2
+  const buffer = new ArrayBuffer(44 + dataLength)
+  const dv = new DataView(buffer)
+  const bytes = new Uint8Array(buffer)
+
+  bytes.set([0x52, 0x49, 0x46, 0x46], 0) // "RIFF"
+  dv.setUint32(4, 36 + dataLength, true)
+  bytes.set([0x57, 0x41, 0x56, 0x45], 8) // "WAVE"
+  bytes.set([0x66, 0x6d, 0x74, 0x20], 12) // "fmt "
+  dv.setUint32(16, 16, true) // PCM chunk size
+  dv.setUint16(20, 1, true) // PCM format
+  dv.setUint16(22, 1, true) // mono
+  dv.setUint32(24, sampleRate, true)
+  dv.setUint32(28, sampleRate * 2, true) // byte rate
+  dv.setUint16(32, 2, true) // block align
+  dv.setUint16(34, 16, true) // bits per sample
+  bytes.set([0x64, 0x61, 0x74, 0x61], 36) // "data"
+  dv.setUint32(40, dataLength, true)
+
+  let offset = 44
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    dv.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+  }
+  return buffer
+}
+
+/**
+ * 优先使用浏览器原生 WebAudio 硬解提取音频（通常 < 1 秒，无需下载 31MB FFmpeg.wasm）
+ * 若浏览器不支持该封装/编码格式，抛出异常由调用方回退到 FFmpeg.wasm
+ */
+async function extractAudioNative(
+  videoFile: File,
+  onLog?: (message: string) => void
+): Promise<ArrayBuffer> {
+  if (typeof AudioContext === 'undefined' || typeof OfflineAudioContext === 'undefined') {
+    throw new Error('浏览器不支持 WebAudio')
+  }
+
+  onLog?.('正在快速提取音频...')
+  const arrayBuf = await videoFile.arrayBuffer()
+  const audioCtx = new AudioContext()
+  let decoded: AudioBuffer
+  try {
+    decoded = await audioCtx.decodeAudioData(arrayBuf)
+  } finally {
+    await audioCtx.close().catch(() => {})
+  }
+
+  if (!decoded || decoded.duration <= 0) {
+    throw new Error('解码音频为空')
+  }
+
+  const targetRate = 16000
+  const targetLength = Math.ceil(decoded.duration * targetRate)
+  const offline = new OfflineAudioContext(1, targetLength, targetRate)
+  const source = offline.createBufferSource()
+  source.buffer = decoded
+  source.connect(offline.destination)
+  source.start(0)
+  const rendered = await offline.startRendering()
+
+  return encodeWav16kMono(rendered.getChannelData(0), targetRate)
+}
+
+/**
  * 从视频文件中提取音频为 16kHz 单声道 WAV
+ * 优先走浏览器原生 WebAudio（极快，手机端无需等待 31MB WASM），失败时自动回退到 FFmpeg.wasm
  */
 export async function extractAudio(
   videoFile: File,
   onLog?: (message: string) => void
 ): Promise<ArrayBuffer> {
+  try {
+    return await extractAudioNative(videoFile, onLog)
+  } catch (nativeErr) {
+    console.warn('[Audio] 原生提取失败，回退到 FFmpeg.wasm:', nativeErr)
+  }
+
   onLog?.('正在加载音视频组件（首次约需几十秒）...')
   const ff = await getFFmpeg()
 
