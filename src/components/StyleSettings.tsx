@@ -33,6 +33,35 @@ export default function StyleSettings() {
         </div>
       </div>
 
+      {/* 字幕上下顺序（双语同时开启时显示） */}
+      {settings.showEn && settings.showZh && (
+        <div className="space-y-2">
+          <label className="text-xs text-slate-500">字幕顺序</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => updateSettings({ subtitleOrder: 'zh-en' })}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                settings.subtitleOrder !== 'en-zh'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              中上英下
+            </button>
+            <button
+              onClick={() => updateSettings({ subtitleOrder: 'en-zh' })}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                settings.subtitleOrder === 'en-zh'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              英上中下
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 颜色选择 */}
       <div className="space-y-2">
         {settings.showEn && (

@@ -133,6 +133,9 @@ function SubtitleOverlay({
     ? `rgba(0,0,0,${settings.bgOpacity})`
     : 'transparent'
 
+  const langOrder: ('zh' | 'en')[] =
+    settings.subtitleOrder === 'en-zh' ? ['en', 'zh'] : ['zh', 'en']
+
   return (
     <div
       className="absolute left-1/2 pointer-events-none w-full px-4 text-center"
@@ -142,41 +145,45 @@ function SubtitleOverlay({
       }}
     >
       <div
-        className="inline-block rounded-lg px-4 py-2 max-w-[90%]"
+        className="inline-block rounded-lg px-4 py-2 max-w-[90%] space-y-1"
         style={{ background: bgStyle }}
       >
-        {settings.showZh &&
-          visibleSubs.map((s) =>
-            s.textZh ? (
-              <div
-                key={`zh-${s.id}`}
-                style={{
-                  color: settings.zhColor,
-                  fontSize: `${settings.fontSize}px`,
-                  lineHeight: '1.4',
-                  fontWeight: 600,
-                }}
-                className="mb-1"
-              >
-                {s.textZh}
-              </div>
-            ) : null
-          )}
-        {settings.showEn &&
-          visibleSubs.map((s) =>
-            s.textEn ? (
-              <div
-                key={`en-${s.id}`}
-                style={{
-                  color: settings.enColor,
-                  fontSize: `${settings.fontSize - 4}px`,
-                  lineHeight: '1.4',
-                }}
-              >
-                {s.textEn}
-              </div>
-            ) : null
-          )}
+        {langOrder.map((lang) => {
+          if (lang === 'zh' && settings.showZh) {
+            return visibleSubs.map((s) =>
+              s.textZh ? (
+                <div
+                  key={`zh-${s.id}`}
+                  style={{
+                    color: settings.zhColor,
+                    fontSize: `${settings.fontSize}px`,
+                    lineHeight: '1.4',
+                    fontWeight: 600,
+                  }}
+                >
+                  {s.textZh}
+                </div>
+              ) : null
+            )
+          }
+          if (lang === 'en' && settings.showEn) {
+            return visibleSubs.map((s) =>
+              s.textEn ? (
+                <div
+                  key={`en-${s.id}`}
+                  style={{
+                    color: settings.enColor,
+                    fontSize: `${Math.max(12, settings.fontSize - 4)}px`,
+                    lineHeight: '1.4',
+                  }}
+                >
+                  {s.textEn}
+                </div>
+              ) : null
+            )
+          }
+          return null
+        })}
       </div>
     </div>
   )

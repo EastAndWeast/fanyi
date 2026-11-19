@@ -1,4 +1,25 @@
-import type { SubtitleSegment } from '../types'
+import type { SubtitleOrder, SubtitleSegment } from '../types'
+
+/**
+ * 按指定语言和双语顺序收集单条字幕文本行
+ */
+function collectTexts(
+  sub: SubtitleSegment,
+  lang: 'en' | 'zh' | 'both',
+  order: SubtitleOrder
+): string[] {
+  if (lang === 'en') return sub.textEn ? [sub.textEn] : []
+  if (lang === 'zh') return sub.textZh ? [sub.textZh] : []
+
+  const langOrder: ('zh' | 'en')[] =
+    order === 'en-zh' ? ['en', 'zh'] : ['zh', 'en']
+  const texts: string[] = []
+  for (const l of langOrder) {
+    if (l === 'zh' && sub.textZh) texts.push(sub.textZh)
+    if (l === 'en' && sub.textEn) texts.push(sub.textEn)
+  }
+  return texts
+}
 
 /**
  * 将秒数格式化为 SRT 时间戳: HH:MM:SS,mmm
@@ -29,18 +50,12 @@ function formatVTTTime(seconds: number): string {
  */
 export function generateSRT(
   subtitles: SubtitleSegment[],
-  lang: 'en' | 'zh' | 'both' = 'both'
+  lang: 'en' | 'zh' | 'both' = 'both',
+  order: SubtitleOrder = 'zh-en'
 ): string {
   return subtitles
     .map((sub, index) => {
-      const texts: string[] = []
-      if (lang === 'en' || lang === 'both') {
-        if (sub.textEn) texts.push(sub.textEn)
-      }
-      if (lang === 'zh' || lang === 'both') {
-        if (sub.textZh) texts.push(sub.textZh)
-      }
-
+      const texts = collectTexts(sub, lang, order)
       if (texts.length === 0) return ''
 
       return `${index + 1}\n${formatSRTTime(sub.start)} --> ${formatSRTTime(sub.end)}\n${texts.join('\n')}`
@@ -54,18 +69,12 @@ export function generateSRT(
  */
 export function generateVTT(
   subtitles: SubtitleSegment[],
-  lang: 'en' | 'zh' | 'both' = 'both'
+  lang: 'en' | 'zh' | 'both' = 'both',
+  order: SubtitleOrder = 'zh-en'
 ): string {
   const body = subtitles
     .map((sub) => {
-      const texts: string[] = []
-      if (lang === 'en' || lang === 'both') {
-        if (sub.textEn) texts.push(sub.textEn)
-      }
-      if (lang === 'zh' || lang === 'both') {
-        if (sub.textZh) texts.push(sub.textZh)
-      }
-
+      const texts = collectTexts(sub, lang, order)
       if (texts.length === 0) return ''
 
       return `${formatVTTTime(sub.start)} --> ${formatVTTTime(sub.end)}\n${texts.join('\n')}`

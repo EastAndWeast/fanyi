@@ -131,13 +131,19 @@ export default function ExportView() {
   const handleDownloadSRT = (lang: 'en' | 'zh' | 'both') => {
     const baseName = videoFile?.name.replace(/\.[^.]+$/, '') || 'subtitles'
     const suffix = lang === 'both' ? '' : `_${lang}`
-    downloadFile(generateSRT(subtitles, lang), `${baseName}${suffix}.srt`)
+    downloadFile(
+      generateSRT(subtitles, lang, settings.subtitleOrder),
+      `${baseName}${suffix}.srt`
+    )
   }
 
   const handleDownloadVTT = (lang: 'en' | 'zh' | 'both') => {
     const baseName = videoFile?.name.replace(/\.[^.]+$/, '') || 'subtitles'
     const suffix = lang === 'both' ? '' : `_${lang}`
-    downloadFile(generateVTT(subtitles, lang), `${baseName}${suffix}.vtt`)
+    downloadFile(
+      generateVTT(subtitles, lang, settings.subtitleOrder),
+      `${baseName}${suffix}.vtt`
+    )
   }
 
   return (

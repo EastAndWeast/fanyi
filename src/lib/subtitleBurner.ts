@@ -126,19 +126,23 @@ function drawSubtitle(
   ctx.textBaseline = 'middle'
 
   // 先完成自动换行，再精确计算整体宽高
+  const langOrder: ('zh' | 'en')[] =
+    settings.subtitleOrder === 'en-zh' ? ['en', 'zh'] : ['zh', 'en']
   const wrappedLines: { text: string; color: string; size: number }[] = []
   for (const sub of currentSubs) {
-    if (settings.showZh && sub.textZh) {
-      ctx.font = `600 ${fontSize}px sans-serif`
-      for (const dl of wrapText(ctx, sub.textZh, maxWidthLine)) {
-        wrappedLines.push({ text: dl, color: settings.zhColor, size: fontSize })
+    for (const lang of langOrder) {
+      if (lang === 'zh' && settings.showZh && sub.textZh) {
+        ctx.font = `600 ${fontSize}px sans-serif`
+        for (const dl of wrapText(ctx, sub.textZh, maxWidthLine)) {
+          wrappedLines.push({ text: dl, color: settings.zhColor, size: fontSize })
+        }
       }
-    }
-    if (settings.showEn && sub.textEn) {
-      const enSize = Math.max(12, fontSize - 4)
-      ctx.font = `600 ${enSize}px sans-serif`
-      for (const dl of wrapText(ctx, sub.textEn, maxWidthLine)) {
-        wrappedLines.push({ text: dl, color: settings.enColor, size: enSize })
+      if (lang === 'en' && settings.showEn && sub.textEn) {
+        const enSize = Math.max(12, fontSize - 4)
+        ctx.font = `600 ${enSize}px sans-serif`
+        for (const dl of wrapText(ctx, sub.textEn, maxWidthLine)) {
+          wrappedLines.push({ text: dl, color: settings.enColor, size: enSize })
+        }
       }
     }
   }
@@ -174,17 +178,18 @@ function drawSubtitle(
   }
 
   // 逐行绘制文本
-  let currentY = y - totalHeight / 2 + wrappedLines[0].size / 2
+  let cursorY = y - totalHeight / 2
   for (const line of wrappedLines) {
+    const lineCenterY = cursorY + line.size / 2
     ctx.font = `600 ${line.size}px sans-serif`
     ctx.strokeStyle = 'rgba(0,0,0,0.8)'
     ctx.lineWidth = Math.max(2, line.size / 12)
     ctx.lineJoin = 'round'
 
-    ctx.strokeText(line.text, w / 2, currentY)
+    ctx.strokeText(line.text, w / 2, lineCenterY)
     ctx.fillStyle = line.color
-    ctx.fillText(line.text, w / 2, currentY)
-    currentY += line.size + padding * 0.5
+    ctx.fillText(line.text, w / 2, lineCenterY)
+    cursorY += line.size + padding * 0.5
   }
 }
 
