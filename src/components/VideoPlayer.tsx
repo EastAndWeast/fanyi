@@ -134,7 +134,7 @@ function SubtitleOverlay({
     : 'transparent'
 
   const langOrder: ('zh' | 'en')[] =
-    settings.subtitleOrder === 'en-zh' ? ['en', 'zh'] : ['zh', 'en']
+    settings.subtitleOrder === 'zh-en' ? ['zh', 'en'] : ['en', 'zh']
 
   return (
     <div

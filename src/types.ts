@@ -70,7 +70,7 @@ export const API_PRESETS: Record<
 export const DEFAULT_SETTINGS: SubtitleSettings = {
   showEn: true,
   showZh: true,
-  subtitleOrder: 'zh-en',
+  subtitleOrder: 'en-zh',
   enColor: '#ffffff',
   zhColor: '#ffd700',
   positionY: 67, // 默认位于画面下方约 1/3 处

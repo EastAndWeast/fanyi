@@ -127,7 +127,7 @@ function drawSubtitle(
 
   // 先完成自动换行，再精确计算整体宽高
   const langOrder: ('zh' | 'en')[] =
-    settings.subtitleOrder === 'en-zh' ? ['en', 'zh'] : ['zh', 'en']
+    settings.subtitleOrder === 'zh-en' ? ['zh', 'en'] : ['en', 'zh']
   const wrappedLines: { text: string; color: string; size: number }[] = []
   for (const sub of currentSubs) {
     for (const lang of langOrder) {

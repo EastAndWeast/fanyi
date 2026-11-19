@@ -12,7 +12,7 @@ function collectTexts(
   if (lang === 'zh') return sub.textZh ? [sub.textZh] : []
 
   const langOrder: ('zh' | 'en')[] =
-    order === 'en-zh' ? ['en', 'zh'] : ['zh', 'en']
+    order === 'zh-en' ? ['zh', 'en'] : ['en', 'zh']
   const texts: string[] = []
   for (const l of langOrder) {
     if (l === 'zh' && sub.textZh) texts.push(sub.textZh)
@@ -51,7 +51,7 @@ function formatVTTTime(seconds: number): string {
 export function generateSRT(
   subtitles: SubtitleSegment[],
   lang: 'en' | 'zh' | 'both' = 'both',
-  order: SubtitleOrder = 'zh-en'
+  order: SubtitleOrder = 'en-zh'
 ): string {
   return subtitles
     .map((sub, index) => {
@@ -70,7 +70,7 @@ export function generateSRT(
 export function generateVTT(
   subtitles: SubtitleSegment[],
   lang: 'en' | 'zh' | 'both' = 'both',
-  order: SubtitleOrder = 'zh-en'
+  order: SubtitleOrder = 'en-zh'
 ): string {
   const body = subtitles
     .map((sub) => {
