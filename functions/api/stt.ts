@@ -258,6 +258,24 @@ export function segmentsFromText(text: string, duration: number): SubtitleSegmen
   })
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const CHUNK = 0x8000
+  const parts: string[] = []
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)))
+  }
+  return btoa(parts.join(''))
+}
+
+interface WhisperResult {
+  text?: string
+  vtt?: string
+  word_count?: number
+  words?: WhisperWord[]
+  segments?: { start?: number; end?: number; text?: string }[]
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const { request, env } = context
 
@@ -283,65 +301,89 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     // 逐块转写（串行，避免并发触发限流）
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
-      const audioBytes = Array.from(new Uint8Array(chunk))
+      const base64Audio = arrayBufferToBase64(chunk)
       console.log(
-        `[STT] Chunk ${i + 1}/${chunks.length}: ${audioBytes.length} numbers (${chunk.byteLength} bytes)`
+        `[STT] Chunk ${i + 1}/${chunks.length}: ${chunk.byteLength} bytes (base64 ${base64Audio.length})`
       )
 
-      // 调用 Workers AI Whisper 模型
-      let result: {
-        text?: string
-        vtt?: string
-        word_count?: number
-        words?: WhisperWord[]
-      }
+      // 优先调用 @cf/openai/whisper-large-v3-turbo（更快、更准、原生支持 base64 与 vad_filter）
+      // 若不可用则回退到 @cf/openai/whisper
+      let result: WhisperResult
       try {
-        // 默认由前端传入 language（如 'en'），避免 Whisper 对纯音乐/弱语音分块误判为韩文等小语种；
-        // 用户选择「自动检测」时不传 language 以支持多语种视频。
-        const whisperInput: { audio: number[]; language?: string } = {
-          audio: audioBytes,
+        const turboInput: Record<string, unknown> = {
+          audio: base64Audio,
+          vad_filter: true,
         }
         if (language) {
-          whisperInput.language = language
+          turboInput.language = language
         }
-        result = await env.AI.run(
-          '@cf/openai/whisper',
-          whisperInput as { audio: number[] }
-        ) as {
-          text?: string
-          vtt?: string
-          word_count?: number
-          words?: WhisperWord[]
-        }
-      } catch (aiError) {
-        console.error(`[STT] Workers AI error (chunk ${i + 1}):`, aiError)
-        const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
-        // 3010 "Invalid audio input"：该块可能是纯静音/噪声段，跳过继续下一块
-        if (errMsg.includes('Invalid audio input') || errMsg.includes('3010')) {
-          console.warn(`[STT] Chunk ${i + 1} skipped (invalid/silent audio)`) 
+        result = (await env.AI.run(
+          '@cf/openai/whisper-large-v3-turbo' as Parameters<Ai['run']>[0],
+          turboInput as { audio: number[] }
+        )) as WhisperResult
+      } catch (turboErr) {
+        const turboMsg = turboErr instanceof Error ? turboErr.message : String(turboErr)
+        console.warn(`[STT] whisper-large-v3-turbo error (chunk ${i + 1}):`, turboMsg)
+        // 3010 "Invalid audio input"：静音/无效音频直接跳过
+        if (turboMsg.includes('Invalid audio input') || turboMsg.includes('3010')) {
           continue
         }
-        // 如果是内部错误，返回更友好的信息
-        if (errMsg.includes('internal error')) {
-          return Response.json(
-            { error: '语音识别服务暂时不可用，请稍后重试' },
-            { status: 503 }
-          )
+        try {
+          const audioBytes = Array.from(new Uint8Array(chunk))
+          const fallbackInput: { audio: number[]; language?: string } = {
+            audio: audioBytes,
+          }
+          if (language) {
+            fallbackInput.language = language
+          }
+          result = (await env.AI.run(
+            '@cf/openai/whisper',
+            fallbackInput as { audio: number[] }
+          )) as WhisperResult
+        } catch (aiError) {
+          console.error(`[STT] Workers AI fallback error (chunk ${i + 1}):`, aiError)
+          const errMsg = aiError instanceof Error ? aiError.message : String(aiError)
+          if (errMsg.includes('Invalid audio input') || errMsg.includes('3010')) {
+            console.warn(`[STT] Chunk ${i + 1} skipped (invalid/silent audio)`)
+            continue
+          }
+          if (errMsg.includes('internal error')) {
+            return Response.json(
+              { error: '语音识别服务暂时不可用，请稍后重试' },
+              { status: 503 }
+            )
+          }
+          if (errMsg.includes('too large')) {
+            return Response.json(
+              { error: '音频数据过大，请将视频分段后再试' },
+              { status: 413 }
+            )
+          }
+          throw aiError
         }
-        if (errMsg.includes('too large')) {
-          return Response.json(
-            { error: '音频数据过大，请将视频分段后再试' },
-            { status: 413 }
-          )
-        }
-        throw aiError
       }
 
       console.log(`[STT] Chunk ${i + 1} result keys: ${Object.keys(result).join(', ')}`)
 
-      // 优先解析 VTT 格式（含时间戳）
+      // 优先使用结构化 segments（whisper-large-v3-turbo 直接返回）
       let segments: SubtitleSegment[] = []
-      if (result.vtt) {
+      if (Array.isArray(result.segments) && result.segments.length > 0) {
+        segments = result.segments
+          .filter(
+            (s) =>
+              typeof s.start === 'number' &&
+              typeof s.end === 'number' &&
+              Boolean(s.text?.trim())
+          )
+          .map((s) => ({
+            start: s.start as number,
+            end: s.end as number,
+            text: (s.text as string).trim(),
+          }))
+      }
+
+      // 其次解析 VTT 格式（含时间戳）
+      if (segments.length === 0 && result.vtt) {
         segments = parseVTT(result.vtt)
       }
 

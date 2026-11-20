@@ -152,7 +152,7 @@ async function processSTTChunk(
 
   for (let retry = 0; retry <= STT_MAX_RETRIES; retry++) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 45_000)
+    const timer = setTimeout(() => controller.abort(), 60_000)
     try {
       const formData = new FormData()
       const blob = new Blob([chunk], { type: 'audio/wav' })
