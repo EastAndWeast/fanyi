@@ -306,13 +306,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         `[STT] Chunk ${i + 1}/${chunks.length}: ${chunk.byteLength} bytes (base64 ${base64Audio.length})`
       )
 
-      // 优先调用 @cf/openai/whisper-large-v3-turbo（更快、更准、原生支持 base64 与 vad_filter）
+      // 优先调用 @cf/openai/whisper-large-v3-turbo（更快、更准、原生支持 base64）
+      // 注意：不开启 vad_filter，因为 Silero VAD 会把唱歌/带背景音乐的人声误判为非语音而大量漏掉字幕
       // 若不可用则回退到 @cf/openai/whisper
       let result: WhisperResult
       try {
         const turboInput: Record<string, unknown> = {
           audio: base64Audio,
-          vad_filter: true,
         }
         if (language) {
           turboInput.language = language
