@@ -10,11 +10,15 @@ export interface SubtitleSegment {
 // 双语字幕上下顺序
 export type SubtitleOrder = 'zh-en' | 'en-zh'
 
+// 视频原语言（传给 Whisper STT，en 可避免纯音乐/噪音被误判为韩文等小语种）
+export type SourceLanguage = 'en' | 'auto' | 'zh' | 'ja' | 'ko'
+
 // 字幕样式设置
 export interface SubtitleSettings {
   showEn: boolean
   showZh: boolean
   subtitleOrder: SubtitleOrder // 双语字幕上下顺序：zh-en 中上英下，en-zh 英上中下
+  sourceLanguage: SourceLanguage // 视频原语言，默认 en
   enColor: string
   zhColor: string
   positionY: number // 字幕垂直位置：距顶部百分比 0-100
@@ -71,6 +75,7 @@ export const DEFAULT_SETTINGS: SubtitleSettings = {
   showEn: true,
   showZh: true,
   subtitleOrder: 'en-zh',
+  sourceLanguage: 'en',
   enColor: '#ffffff',
   zhColor: '#ffd700',
   positionY: 67, // 默认位于画面下方约 1/3 处

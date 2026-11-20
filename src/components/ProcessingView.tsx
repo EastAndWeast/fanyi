@@ -26,6 +26,7 @@ export default function ProcessingView() {
   const videoFile = useStore((s) => s.videoFile)
   const mediaKind = useStore((s) => s.mediaKind)
   const apiConfig = useStore((s) => s.apiConfig)
+  const sourceLanguage = useStore((s) => s.settings.sourceLanguage)
   const setSubtitles = useStore((s) => s.setSubtitles)
   const setStep = useStore((s) => s.setStep)
   const clearVideo = useStore((s) => s.clearVideo)
@@ -81,9 +82,13 @@ export default function ProcessingView() {
       // 步骤2: 语音识别（前端分块逐块发送，避免长音频触发 524 超时）
       setStage('transcribing')
       setSttProgress(null)
-      const subs = await callSTT(audioWav, (completed, total) => {
-        setSttProgress({ completed, total })
-      })
+      const subs = await callSTT(
+        audioWav,
+        (completed, total) => {
+          setSttProgress({ completed, total })
+        },
+        sourceLanguage
+      )
 
       // 步骤3: 翻译（未配置 API Key 时后端自动使用内置免费翻译）
       setStage('translating')

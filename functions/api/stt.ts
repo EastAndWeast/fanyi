@@ -25,8 +25,32 @@ interface WhisperWord {
 // - 超过 CHUNK_MAX_BYTES 才分块（30 秒），短视频保持单块识别质量最好
 // - 分块后每块 30 秒（960K numbers → JSON 约 3.3MB），远低于 Workers AI 3006 限制
 //   （社区报告 2MB 原始音频即 ~7MB JSON 触发 3006，30 秒块 3.3MB 有充足余量）
-const CHUNK_MAX_BYTES = 30 * 32000
-const CHUNK_BYTES = 30 * 32000
+// 每块 20 秒（640K numbers → JSON 约 2.2MB），降低 Workers AI 3046 Request timeout 概率
+const CHUNK_MAX_BYTES = 20 * 32000
+const CHUNK_BYTES = 20 * 32000
+
+// 过滤 Whisper 在纯音乐/静音段常见的幻觉输出及锁定英文时的非英文乱码
+const HALLUCINATION_PATTERNS = [
+  /^thank you( very much)?( for watching)?[.!]*$/i,
+  /^thanks for watching[.!]*$/i,
+  /^please subscribe[.!]*$/i,
+  /^subtitles by .+$/i,
+  /시청해\s*주셔서\s*감사합니다/,
+  /MBC\s*뉴스/i,
+  /ご視聴ありがとう/,
+  /^字幕由.+制作/,
+]
+
+function isHallucinatedSegment(text: string, language: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return true
+  // 纯标点或无实际文字
+  if (/^[\s\p{P}\p{S}]+$/u.test(trimmed)) return true
+  if (HALLUCINATION_PATTERNS.some((re) => re.test(trimmed))) return true
+  // 锁定英文模式时，过滤掉完全不含英文字母的乱码/误识别片段
+  if (language === 'en' && !/[a-zA-Z]/.test(trimmed)) return true
+  return false
+}
 
 /**
  * 动态解析 WAV 结构，提取 fmt 参数和 data chunk 位置。
@@ -240,6 +264,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const formData = await request.formData()
     const audioFile = formData.get('audio') as File | null
+    const rawLang = (formData.get('language') as string | null)?.trim() || ''
+    const language = rawLang && rawLang !== 'auto' ? rawLang : ''
 
     if (!audioFile) {
       return Response.json({ error: '未找到音频文件' }, { status: 400 })
@@ -270,12 +296,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         words?: WhisperWord[]
       }
       try {
-        // 不传 language 让 Whisper 自动检测语种（支持中文/日语/韩语等），
-        // 之前硬编码 'en' 会导致非英语音频识别严重降级（前半段丢失）。
-        // workers-types 的 whisper 类型未声明 language 字段，用类型断言绕过
-        result = await env.AI.run('@cf/openai/whisper', {
+        // 默认由前端传入 language（如 'en'），避免 Whisper 对纯音乐/弱语音分块误判为韩文等小语种；
+        // 用户选择「自动检测」时不传 language 以支持多语种视频。
+        const whisperInput: { audio: number[]; language?: string } = {
           audio: audioBytes,
-        } as { audio: number[] }) as {
+        }
+        if (language) {
+          whisperInput.language = language
+        }
+        result = await env.AI.run(
+          '@cf/openai/whisper',
+          whisperInput as { audio: number[] }
+        ) as {
           text?: string
           vtt?: string
           word_count?: number
@@ -325,9 +357,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         segments = segmentsFromText(result.text, audioDuration)
       }
 
-      // 分块时按块起始时间偏移，再合并到总结果
+      // 分块时按块起始时间偏移，并过滤静音/音乐幻觉片段
       const offsetSeconds = (i * CHUNK_BYTES) / 32000
       for (const seg of segments) {
+        if (isHallucinatedSegment(seg.text, language)) {
+          continue
+        }
         allSegments.push({
           start: seg.start + offsetSeconds,
           end: seg.end + offsetSeconds,

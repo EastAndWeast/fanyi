@@ -1,4 +1,4 @@
-import type { SubtitleSegment, ApiConfig } from '../types'
+import type { SubtitleSegment, ApiConfig, SourceLanguage } from '../types'
 
 interface STTResponse {
   segments: { start: number; end: number; text: string }[]
@@ -17,8 +17,10 @@ interface TranslateResponse {
 // 改为前端切分 → 每块单独请求 → 后端每次只处理一块（数秒返回），彻底消除超时。
 
 // 16kHz / 16bit / 单声道 PCM，每秒 32000 字节
-const CHUNK_MAX_BYTES = 30 * 32000
-const CHUNK_BYTES = 30 * 32000
+// 每块 20 秒：相比 30 秒块更不容易触发 Workers AI Whisper 3046 Request timeout
+const CHUNK_MAX_BYTES = 20 * 32000
+const CHUNK_BYTES = 20 * 32000
+const SILENCE_RMS_THRESHOLD = 0.004
 const STT_MAX_RETRIES = 2
 // 并发请求数：Cloudflare Workers AI 免费版可承受 3 路并发，
 // 太多会触发限流。3 路可将 20 块的识别时间从 ~5 分钟降到 ~2 分钟。
@@ -111,14 +113,41 @@ function sliceWav(buffer: ArrayBuffer): ArrayBuffer[] {
 }
 
 /**
+ * 检测 16-bit PCM WAV 块是否为纯静音/极低底噪，避免送入 Whisper 产生幻觉字幕
+ */
+function isSilentWavChunk(chunk: ArrayBuffer): boolean {
+  if (chunk.byteLength <= 44) return true
+  const dv = new DataView(chunk, 44)
+  const sampleCount = Math.floor((chunk.byteLength - 44) / 2)
+  if (sampleCount === 0) return true
+
+  let sumSq = 0
+  // 步长 4 抽样即可准确估算 RMS，耗时可忽略
+  let sampled = 0
+  for (let i = 0; i < sampleCount; i += 4) {
+    const s = dv.getInt16(i * 2, true) / 32768
+    sumSq += s * s
+    sampled++
+  }
+  const rms = Math.sqrt(sumSq / Math.max(sampled, 1))
+  return rms < SILENCE_RMS_THRESHOLD
+}
+
+/**
  * 单块 STT 请求（含自动重试）
- * 返回该块识别到的字幕片段（可为空数组——纯音乐/背景音块）
+ * 返回该块识别到的字幕片段（可为空数组——纯音乐/背景音/静音块）
  */
 async function processSTTChunk(
   chunk: ArrayBuffer,
   chunkIndex: number,
-  totalChunks: number
+  totalChunks: number,
+  language: SourceLanguage
 ): Promise<STTResponse> {
+  if (isSilentWavChunk(chunk)) {
+    console.info(`[STT] Chunk ${chunkIndex + 1}/${totalChunks} is silent, skipping`)
+    return { segments: [] }
+  }
+
   let lastError: Error | null = null
 
   for (let retry = 0; retry <= STT_MAX_RETRIES; retry++) {
@@ -128,6 +157,9 @@ async function processSTTChunk(
       const formData = new FormData()
       const blob = new Blob([chunk], { type: 'audio/wav' })
       formData.append('audio', blob, 'audio.wav')
+      if (language && language !== 'auto') {
+        formData.append('language', language)
+      }
 
       const response = await fetch('/api/stt', {
         method: 'POST',
@@ -179,7 +211,8 @@ async function processSTTChunk(
  */
 export async function callSTT(
   audioWav: ArrayBuffer,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  language: SourceLanguage = 'en'
 ): Promise<SubtitleSegment[]> {
   const chunks = sliceWav(audioWav)
   const total = chunks.length
@@ -193,7 +226,7 @@ export async function callSTT(
   async function worker() {
     while (nextIndex < total) {
       const i = nextIndex++
-      results[i] = await processSTTChunk(chunks[i], i, total)
+      results[i] = await processSTTChunk(chunks[i], i, total, language)
       completed++
       onProgress?.(completed, total)
     }

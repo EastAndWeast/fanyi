@@ -2,12 +2,22 @@ import { useRef, useState } from 'react'
 import { useStore, isMediaFile } from '../store'
 import { getFFmpegMode } from '../lib/ffmpeg'
 import ApiKeySettings from './ApiKeySettings'
-import { API_PRESETS } from '../types'
+import { API_PRESETS, type SourceLanguage } from '../types'
+
+const SOURCE_LANGUAGE_OPTIONS: { value: SourceLanguage; label: string }[] = [
+  { value: 'en', label: '英文（推荐）' },
+  { value: 'auto', label: '自动检测' },
+  { value: 'zh', label: '中文' },
+  { value: 'ja', label: '日语' },
+  { value: 'ko', label: '韩语' },
+]
 
 export default function UploadZone() {
   const setVideo = useStore((s) => s.setVideo)
   const setStep = useStore((s) => s.setStep)
   const apiConfig = useStore((s) => s.apiConfig)
+  const sourceLanguage = useStore((s) => s.settings.sourceLanguage)
+  const updateSettings = useStore((s) => s.updateSettings)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   // 默认收起：内置免费翻译开箱即用，无需引导用户展开配置
@@ -109,6 +119,33 @@ export default function UploadZone() {
             未配置时默认使用内置免费翻译（每日限额，先到先得）；额度用完后可配置自己的 API Key 继续翻译。
           </div>
         )}
+
+        {/* 视频原语言选择（锁定英文可避免歌曲/背景音被误识别成韩文或乱码） */}
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs text-slate-600">
+            <span className="font-medium text-slate-800">视频原语言</span>
+            <span className="text-slate-400 ml-1.5">默认英文，非英语视频请切换</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {SOURCE_LANGUAGE_OPTIONS.map((opt) => {
+              const active = (sourceLanguage || 'en') === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => updateSettings({ sourceLanguage: opt.value })}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
 
         {/* 上传区域 */}
         <div
